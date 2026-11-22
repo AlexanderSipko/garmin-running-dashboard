@@ -18,8 +18,8 @@ const dayLabel = new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "nume
 
 function RecentWellness({ wellness }) {
   const today = new Date();
-  const days = Array.from({ length: 14 }, (_, index) =>
-    new Date(today.getFullYear(), today.getMonth(), today.getDate() - 14 + index)
+  const days = Array.from({ length: 8 }, (_, index) =>
+    new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1 - index)
   );
   const dateKeys = new Set(days.map(localDateKey));
   const valuesByMetric = Object.fromEntries(dailyMetrics.map(({ key }) => [
@@ -38,11 +38,11 @@ function RecentWellness({ wellness }) {
     return [key, values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null];
   }));
   return (
-    <section className="mb-4" aria-label="Показатели здоровья за последние 14 завершённых дней">
-      <h2 className="mb-2 text-[15px] font-bold">Здоровье · 14 завершённых дней</h2>
-      <div className="mb-2 h-[150px] w-full rounded-lg border border-[#3b4a50] bg-[#202c31] p-2" aria-label="График сна, ВСР и пульса покоя за 14 дней">
+    <section className="mb-4" aria-label="Показатели здоровья за последние 8 завершённых дней">
+      <h2 className="mb-2 text-[15px] font-bold">Здоровье · 8 последних дней</h2>
+      <div className="mb-2 h-[150px] w-full rounded-lg border border-[#3b4a50] bg-[#202c31] p-2" aria-label="График сна, ВСР и пульса покоя за 8 дней">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={days.slice(-8).map((day) => {
+          <ComposedChart data={days.slice(0, 8).reverse().map((day) => {
             const date = localDateKey(day);
             return {
               label: day.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
@@ -113,7 +113,7 @@ function RecentWellness({ wellness }) {
                         </dt>
                         <dd className="m-0 flex items-center gap-0.5 text-[#e5ebee]">
                           {value.toFixed(digits)}<small className="ml-0.5 text-[10px] text-[color:var(--muted)]">{unit}</small>
-                          {rule && average != null && <span className={changed ? (isGood ? "ml-0.5 text-[#78d6a0]" : "ml-0.5 text-[#f18491]") : "ml-0.5 text-[#9aa8ad]"} aria-label={changed ? (isGood ? "лучше среднего" : "хуже среднего") : "около среднего"} title={`Среднее за 14 дней: ${average.toFixed(digits)} ${unit}; порог ±${rule.tolerance} ${unit}`}>
+                          {rule && average != null && <span className={changed ? (isGood ? "ml-0.5 text-[#78d6a0]" : "ml-0.5 text-[#f18491]") : "ml-0.5 text-[#9aa8ad]"} aria-label={changed ? (isGood ? "лучше среднего" : "хуже среднего") : "около среднего"} title={`Среднее за 8 дней: ${average.toFixed(digits)} ${unit}; порог ±${rule.tolerance} ${unit}`}>
                             {!changed ? "↔" : delta > 0 ? "↑" : "↓"}
                           </span>}
                         </dd>
