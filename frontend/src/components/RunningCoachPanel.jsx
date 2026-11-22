@@ -72,11 +72,21 @@ export default function RunningCoachPanel({ period, periodStart, periodEnd, labe
   const today = new Date();
   const activeToday = view === "today";
 
+  function openConsultation() {
+    setOpened(true);
+    setIsOpen(true);
+  }
+
   return (
     <>
-      <button type="button" onClick={() => { setOpened(true); setIsOpen(true); }} aria-haspopup="dialog"
+      <button type="button" onClick={openConsultation} aria-haspopup="dialog"
         className="inline-flex min-h-10 w-fit items-center gap-2 rounded-xl border border-[#6f5540] bg-[#302820] px-3 py-2 text-sm font-bold text-[#f3bc7f] hover:bg-[#413426]">
         <ScanLine size={17} /> Консультация и анализ
+      </button>
+      <button type="button" onClick={openConsultation} aria-haspopup="dialog"
+        aria-label="Открыть консультацию" title="Консультация и анализ"
+        className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-40 grid size-12 place-items-center rounded-full border border-[#715339] bg-[#eab16a] text-[#211810] shadow-lg shadow-black/40 hover:bg-[#f5c58e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3bc7f]">
+        <ScanLine size={22} aria-hidden="true" />
       </button>
       <dialog ref={modal} onClose={() => setIsOpen(false)} aria-labelledby="consultation-title"
         className={`overflow-hidden border border-[#3b4a50] bg-[#202c31] p-0 text-slate-100 shadow-2xl backdrop:bg-[#0b1116]/80 max-[760px]:fixed max-[760px]:inset-0 max-[760px]:m-0 max-[760px]:h-dvh max-[760px]:max-h-none max-[760px]:w-screen max-[760px]:max-w-none max-[760px]:rounded-none ${expanded ? "fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none" : "m-auto h-[min(82dvh,740px)] w-[min(760px,calc(100%-2rem))] max-w-none rounded-2xl"}`}>

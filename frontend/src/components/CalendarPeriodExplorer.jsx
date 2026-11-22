@@ -37,6 +37,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
     [activities]
   );
 
+  const [yearChartOpen, setYearChartOpen] = useState(true);
   const [expandedYear, setExpandedYear] = useState(() => new Date().getFullYear());
   const [expandedMonth, setExpandedMonth] = useState(null);
   const [selectedTypes, setSelectedTypes] = useState(["running"]);
@@ -94,23 +95,28 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
   const showRunning = selectedTypes.includes("running");
   const showStrength = selectedTypes.includes("strength");
   const chartYear = selection.year;
-  const isMonthChart = selection.type !== "year";
-  const chartData = useMemo(() => {
-    if (isMonthChart) {
-      const month = selection.month;
-      const daysInMonth = new Date(chartYear, month + 1, 0).getDate();
-      return Array.from({ length: daysInMonth }, (_, index) => {
-        const day = index + 1;
-        const date = new Date(chartYear, month, day);
-        const summary = daySummaries.get(dayKey(date));
-        const weekday = date.getDay();
-        return { label: String(day), weekend: weekday === 0 || weekday === 6, runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,
-          pace: summary?.runKm ? summary.runSeconds / summary.runKm : null,
-          avgHr: summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
-          strengthCount: summary?.strengthCount || 0 };
-      });
-    }
+  const chartMonth = expandedMonth?.month;
+  const monthlySummary = chartMonth == null ? null : monthSummaries.get(`${chartYear}-${chartMonth}`);
+  const monthChartData = useMemo(() => {
+    if (chartMonth == null) return [];
+    const daysInMonth = new Date(chartYear, chartMonth + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      const date = new Date(chartYear, chartMonth, day);
+      const summary = daySummaries.get(dayKey(date));
+      const weekday = date.getDay();
+      return {
+        label: String(day),
+        weekend: weekday === 0 || weekday === 6,
+        runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,
+        pace: summary?.runKm ? summary.runSeconds / summary.runKm : null,
+        avgHr: summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
+        strengthCount: summary?.strengthCount || 0,
+      };
+    });
+  }, [chartMonth, chartYear, daySummaries]);
 
+  const yearChartData = useMemo(() => {
     const currentDate = new Date();
     return Array.from({ length: 12 }, (_, month) => {
       const isFuture = chartYear > currentDate.getFullYear()
@@ -124,10 +130,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
         strengthCount: isFuture ? null : summary?.strengthCount || 0,
       };
     });
-  }, [chartYear, daySummaries, isMonthChart, monthSummaries, selection.month]);
-  const chartPeriodLabel = isMonthChart
-    ? `Дни · ${monthNames[selection.month]} ${chartYear}`
-    : `Месяцы · ${chartYear}`;
+  }, [chartYear, monthSummaries]);
 
   const selectionLabel = selection.type === "year"
     ? `${selection.year} год`
@@ -421,20 +424,21 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
           </article>
         </div>
 
-        {selection.type !== "day" && (
-          <PeriodTrends
-            data={chartData}
-            periodLabel={chartPeriodLabel}
-            showRunning={showRunning}
-            showStrength={showStrength}
-            periodSummary={{
-              distanceKm: totalRunKm,
-              pace: averagePace,
-              heartRate: averageHr,
-              strengthCount,
-            }}
-          />
-        )}
+        <section className="min-w-0 rounded-xl border border-[#34424a] bg-[#1b252b] p-3">
+          <button type="button" aria-expanded={yearChartOpen} aria-controls="year-trends"
+            onClick={() => setYearChartOpen(!yearChartOpen)}
+            className="flex min-h-10 w-full items-center justify-between gap-2 text-left text-sm font-semibold">
+            <span>Годовая динамика · {chartYear}</span>
+            <span className="inline-flex items-center gap-1 text-xs text-[#aebbc0]">
+              {yearChartOpen ? "Свернуть" : "Развернуть"}
+              <ChevronDown size={16} aria-hidden="true" className={yearChartOpen ? "rotate-180" : undefined} />
+            </span>
+          </button>
+          <div id="year-trends" hidden={!yearChartOpen}>
+            {yearChartOpen && <PeriodTrends data={yearChartData} periodLabel={`Месяцы · ${chartYear}`}
+              showRunning={showRunning} showStrength={showStrength} />}
+          </div>
+        </section>
 
         {expandedYear !== null && (
           <section className="period-calendar-section flex flex-col gap-[10px] min-w-0">
@@ -488,7 +492,9 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
                     if (monthLocked) return;
                     const monthOpen = expandedMonth?.year === expandedYear && expandedMonth.month === month;
                     setExpandedMonth(monthOpen ? null : { year: expandedYear, month });
-                    setSelection({ type: "month", year: expandedYear, month });
+                    setSelection(monthOpen
+                      ? { type: "year", year: expandedYear }
+                      : { type: "month", year: expandedYear, month });
                   }}
                 >
                   <span aria-hidden="true" className="pointer-events-none absolute right-1.5 top-1 bg-gradient-to-br from-[#d4dde1]/80 to-[#d4dde1]/20 bg-clip-text text-[14px] font-bold capitalize leading-none text-transparent">
@@ -535,6 +541,21 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
               );
             })}
             </div>
+          </section>
+        )}
+
+        {chartMonth != null && (
+          <section className="min-w-0" aria-label="График выбранного месяца">
+            <h2 className="mb-2 text-sm font-bold capitalize">{monthNames[chartMonth]} · {chartYear}</h2>
+            <PeriodTrends data={monthChartData} periodLabel={`Дни · ${monthNames[chartMonth]} ${chartYear}`}
+              showRunning={showRunning} showStrength={showStrength}
+              periodSummary={{
+                distanceKm: monthlySummary?.runKm || 0,
+                pace: monthlySummary?.runKm ? monthlySummary.runSeconds / monthlySummary.runKm : null,
+                heartRate: monthlySummary?.hrWeight ? Math.round(monthlySummary.hrSeconds / monthlySummary.hrWeight) : null,
+                strengthCount: monthlySummary?.strengthCount || 0,
+              }}
+            />
           </section>
         )}
 
