@@ -74,6 +74,9 @@ function RecentWellness({ wellness }) {
   const hrvHistory = new Map((wellness?.metrics?.hrv || [])
     .filter(({ value }) => hasMetricValue(value))
     .map(({ date, value }) => [date, Number(value)]));
+  const rollingHrvByDay = new Map(
+    days.map((day) => [localDateKey(day), rollingHrv(day, hrvHistory)])
+  );
   const trendRules = {
     sleep: { tolerance: 0.5, higherIsBetter: true },
     hrv: { tolerance: 5, higherIsBetter: true },
@@ -86,14 +89,14 @@ function RecentWellness({ wellness }) {
   return (
     <section className="mb-4" aria-label="Показатели здоровья за последние 8 дней">
       <h2 className="mb-2 text-[15px] font-bold">Здоровье · 8 последних дней</h2>
-      <div className="mb-2 h-[150px] w-full rounded-lg border border-[#3b4a50] bg-[#202c31] p-2" aria-label="График сна, ВЧП и пульса покоя за 8 дней">
+      <div className="mb-2 h-[150px] w-full rounded-lg border border-[#3b4a50] bg-[#202c31] p-2" aria-label="График сна, среднего ВЧП за 7 дней и пульса покоя">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={[...days].reverse().map((day) => {
             const date = localDateKey(day);
             return {
               label: day.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
               sleep: valuesByMetric.sleep.get(date) ?? null,
-              hrv: valuesByMetric.hrv.get(date) ?? null,
+              hrvAverage: rollingHrvByDay.get(date)?.value ?? null,
               restingHr: valuesByMetric.resting_hr.get(date) ?? null,
             };
           })} barCategoryGap="38%" barGap={2} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
@@ -125,22 +128,22 @@ function RecentWellness({ wellness }) {
             <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
               <div className="rounded-md border border-[#46545b] bg-[#202a30f2] p-2 text-[11px] text-[#dce5e9]">
                 <b>{label}</b>
-                {payload.map(({ dataKey, value }) => <div key={dataKey}>{dataKey === "sleep" ? `Сон: ${Number(value).toFixed(1)} ч` : dataKey === "hrv" ? `ВЧП: ${Math.round(value)} мс` : `Пульс покоя: ${Math.round(value)} уд/мин`}</div>)}
+                {payload.map(({ dataKey, value }) => <div key={dataKey}>{dataKey === "sleep" ? `Сон: ${Number(value).toFixed(1)} ч` : dataKey === "hrvAverage" ? `ВЧП за 7 дней: ${Math.round(value)} мс` : `Пульс покоя: ${Math.round(value)} уд/мин`}</div>)}
               </div>
             ) : null} />
             <Area yAxisId="sleep" dataKey="sleep" name="Сон" type="monotone" stroke="#b9a4ff" strokeWidth={2} fill="url(#wellness-sleep-area)" connectNulls={false} isAnimationActive={false} />
-            <Area yAxisId="hrv" dataKey="hrv" name="ВЧП" type="monotone" stroke="#ef8490" strokeWidth={2} fill="url(#wellness-hrv-area)" connectNulls={false} isAnimationActive={false} />
+            <Area yAxisId="hrv" dataKey="hrvAverage" name="ВЧП за 7 дней" type="monotone" stroke="#ef8490" strokeWidth={2} fill="url(#wellness-hrv-area)" connectNulls={false} isAnimationActive={false} />
             <Line yAxisId="resting" dataKey="restingHr" name="ЧСС покоя" type="monotone" stroke="#f3ad92" strokeWidth={2} dot={{ r: 1.5, fill: "#f3ad92" }} connectNulls={false} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <div className="mb-2 flex flex-wrap gap-x-3 text-[10px] text-[color:var(--muted)]" aria-label="Легенда графика"><span className="text-[#b9a4ff]">▬ Сон, ч</span><span className="text-[#ef8490]">▬ ВЧП</span><span className="text-[#f3ad92]">━ ЧСС покоя</span></div>
+      <div className="mb-2 flex flex-wrap gap-x-3 text-[10px] text-[color:var(--muted)]" aria-label="Легенда графика"><span className="text-[#b9a4ff]">▬ Сон, ч</span><span className="text-[#ef8490]">▬ ВЧП за 7 дней</span><span className="text-[#f3ad92]">━ ЧСС покоя</span></div>
       <div className="grid gap-2 sm:max-[760px]:grid-cols-2">
         {days.map((day) => {
           const date = localDateKey(day);
           const available = dailyMetrics.filter(({ key }) => key !== "hrv" && valuesByMetric[key].has(date));
           const nightlyHrv = valuesByMetric.hrv.get(date);
-          const hrvAverage = rollingHrv(day, hrvHistory);
+          const hrvAverage = rollingHrvByDay.get(date);
           const showHrv = nightlyHrv != null || hrvAverage != null;
 
           return (
