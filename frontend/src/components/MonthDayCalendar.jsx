@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { Gauge, HeartPulse } from "lucide-react";
+import { Dumbbell, Gauge, HeartPulse } from "lucide-react";
 import { dayKey, weeklyVolumeComparison } from "../lib/calendarAnalytics";
 import { fmtPace } from "../lib/format";
 
@@ -37,7 +37,7 @@ export default function MonthDayCalendar({
       </div>
       <div className="period-day-list grid grid-cols-[repeat(7,_minmax(0,_1fr))] gap-1 m-0">
         {weekdays.map((label, index) => (
-          <span key={label} className={`text-center text-[11px] font-bold ${index >= 5 ? "text-[#f3ad92]" : "text-[color:var(--soft)]"}`}>{label}</span>
+          <span key={label} className={`text-center text-[11px] font-bold ${index >= 5 ? "rounded-md bg-[#473029] py-0.5 text-[#ffd1a5]" : "text-[color:var(--soft)]"}`}>{label}</span>
         ))}
         {calendarWeeks.map((week, weekIndex) => {
           const weekRuns = week.days.map((day) => daySummaries.get(dayKey(day))).filter(Boolean);
@@ -78,15 +78,23 @@ export default function MonthDayCalendar({
               const daySelected = selection.type === "day" && selection.year === year && selection.month === month && selection.day === day;
               return (
                 <button
-                  className={`period-cube period-day-cube flex min-w-0 min-h-[54px] flex-col items-center justify-center p-[4px] border border-[color:var(--border)] rounded-[9px] bg-[color:var(--panel)] text-[color:var(--text)] text-[14px] font-semibold text-center capitalize shadow-[0_3px_9px_#00000018] [&.has-run]:border-[#e5aa62] [&.has-run]:[background:linear-gradient(145deg,_#362923,_#1d262b_82%)] [&.is-selected]:border-[color:var(--accent)] [&.is-selected]:bg-[color:var(--accent-soft)] [&_small]:mt-[2px] [&_small]:text-[#e5aa62] [&_small]:text-[10px] [&_small]:leading-[1.1] ${outsideMonth ? "opacity-35" : ""}${hasRun ? " has-run" : ""}${daySelected ? " is-selected" : ""}`}
+                  className={`period-cube period-day-cube relative isolate flex min-w-0 min-h-[54px] flex-col items-center justify-end px-0.5 pb-2 pt-5 border border-[color:var(--border)] rounded-[9px] bg-[color:var(--panel)] text-[color:var(--text)] text-[14px] font-semibold text-center capitalize shadow-[0_3px_9px_#00000018] [&.has-run]:border-[#e5aa62] [&.has-run]:[background:linear-gradient(145deg,_#362923,_#1d262b_82%)] [&.is-selected]:border-[color:var(--accent)] [&.is-selected]:bg-[color:var(--accent-soft)] ${outsideMonth ? "opacity-35" : ""}${hasRun ? " has-run" : ""}${daySelected ? " is-selected" : ""}`}
                   type="button"
                   key={day}
                   aria-label={`${day} ${monthName} ${year}${hasRun ? `, бег ${daily.runKm.toFixed(1)} км` : ""}${hasStrength ? ", силовая тренировка" : ""}`}
                   onClick={() => onSelectDay({ year, month, day })}
                 >
-                  <span className={weekday >= 5 ? "text-[#f3ad92]" : undefined}>{day}</span>
-                  {hasRun && <><small>{daily.runKm.toFixed(1)} км</small><i aria-hidden="true" style={{ width: `${Math.min(12, 4 + daily.runKm * 0.2)}px`, height: `${Math.min(12, 4 + daily.runKm * 0.2)}px` }} className="mt-1 rounded-full bg-[#e5aa62] opacity-80" /></>}
-                  {hasStrength && <i aria-hidden="true" />}
+                  <span aria-hidden="true" className={`pointer-events-none absolute right-1 top-0.5 bg-gradient-to-br bg-clip-text text-[15px] font-bold leading-none text-transparent ${weekday >= 5 ? "from-[#f3bc9a]/85 to-[#f3bc9a]/25" : "from-[#c2cfd4]/75 to-[#c2cfd4]/20"}`}>
+                    {day}
+                  </span>
+                  {hasRun && (
+                    <span className="whitespace-nowrap text-[clamp(10px,1.35vw,16px)] font-extrabold leading-tight text-[#ffc17f]">
+                      {daily.runKm.toFixed(1)}<span className="ml-0.5 text-[8px] font-semibold">км</span>
+                    </span>
+                  )}
+                  {hasStrength && !hasRun && (
+                    <Dumbbell className="text-[#a7b5ff]" size={15} aria-hidden="true" />
+                  )}
                 </button>
               );
             })}

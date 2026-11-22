@@ -449,7 +449,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
                 <h2>Месяцы · {expandedYear}</h2>
               </div>
             </div>
-            <div className="period-month-list grid grid-cols-[repeat(6,_minmax(0,_1fr))] gap-[7px] mt-[14px] mx-0 mb-1 max-[420px]:grid-cols-[repeat(3,_minmax(0,_1fr))]">
+            <div className="period-month-list grid grid-cols-[repeat(6,_minmax(0,_1fr))] gap-[7px] mt-[14px] mx-0 mb-1 max-[620px]:grid-cols-[repeat(3,_minmax(0,_1fr))]">
             {Array.from({ length: 12 }, (_, month) => month).map((month) => {
               const monthName = monthNames[month];
               const currentDate = new Date();
@@ -476,7 +476,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
                   : `${monthName} ${expandedYear}`;
               return (
                 <button
-                  className={`period-month-cube relative isolate flex min-w-0 min-h-[76px] flex-col items-center justify-center gap-1 overflow-hidden px-1 py-1.5 border rounded-[10px] text-[#dce4e8] transition-[border-color,background,box-shadow,transform] duration-150 hover:-translate-y-px [&:disabled:hover]:transform-none [&.is-locked:hover]:transform-none ${showRunning ? "run-mode border-[#5e4940] [background:linear-gradient(145deg,_#362923,_#1d262b_82%)] hover:border-[#dc7959] hover:[background:linear-gradient(145deg,_#38251f,_#1b1e22_82%)] hover:[box-shadow:0_0_16px_#e77d5c24,_inset_0_1px_#ffffff0c] [&.is-selected]:border-[#dc7959] [&.is-selected]:[background:linear-gradient(145deg,_#38251f,_#1b1e22_82%)] [&.is-selected]:[box-shadow:0_0_16px_#e77d5c24,_inset_0_1px_#ffffff0c]" : showStrength ? "strength-mode border-[#424c76] [background:linear-gradient(145deg,_#293148,_#1c252f_82%)] hover:border-[#7485d5] hover:[background:linear-gradient(145deg,_#252c47,_#1a202c_82%)] hover:[box-shadow:0_0_16px_#91a6ff26,_inset_0_1px_#ffffff0c] [&.is-selected]:border-[#7485d5] [&.is-selected]:[background:linear-gradient(145deg,_#252c47,_#1a202c_82%)] [&.is-selected]:[box-shadow:0_0_16px_#91a6ff26,_inset_0_1px_#ffffff0c]" : "border-[#394651] [background:linear-gradient(145deg,_#25323a,_#1a242a_78%)]"}${monthLocked ? " is-locked cursor-not-allowed opacity-[0.26] [filter:saturate(.35)] shadow-none transform-none hover:border-[#394651]" : ""}${monthSelected ? " is-selected" : ""}`}
+                  className={`period-month-cube relative isolate flex min-w-0 min-h-[80px] flex-col items-center justify-end gap-1 overflow-hidden px-1 pb-2 pt-6 border rounded-[10px] text-[#dce4e8] transition-[border-color,background,box-shadow,transform] duration-150 hover:-translate-y-px [&:disabled:hover]:transform-none [&.is-locked:hover]:transform-none ${showRunning ? "run-mode border-[#5e4940] [background:linear-gradient(145deg,_#362923,_#1d262b_82%)] hover:border-[#dc7959] hover:[background:linear-gradient(145deg,_#38251f,_#1b1e22_82%)] hover:[box-shadow:0_0_16px_#e77d5c24,_inset_0_1px_#ffffff0c] [&.is-selected]:border-[#dc7959] [&.is-selected]:[background:linear-gradient(145deg,_#38251f,_#1b1e22_82%)] [&.is-selected]:[box-shadow:0_0_16px_#e77d5c24,_inset_0_1px_#ffffff0c]" : showStrength ? "strength-mode border-[#424c76] [background:linear-gradient(145deg,_#293148,_#1c252f_82%)] hover:border-[#7485d5] hover:[background:linear-gradient(145deg,_#252c47,_#1a202c_82%)] hover:[box-shadow:0_0_16px_#91a6ff26,_inset_0_1px_#ffffff0c] [&.is-selected]:border-[#7485d5] [&.is-selected]:[background:linear-gradient(145deg,_#252c47,_#1a202c_82%)] [&.is-selected]:[box-shadow:0_0_16px_#91a6ff26,_inset_0_1px_#ffffff0c]" : "border-[#394651] [background:linear-gradient(145deg,_#25323a,_#1a242a_78%)]"}${monthLocked ? " is-locked cursor-not-allowed opacity-[0.26] [filter:saturate(.35)] shadow-none transform-none hover:border-[#394651]" : ""}${monthSelected ? " is-selected" : ""}`}
                   type="button"
                   key={monthName}
                   disabled={monthLocked}
@@ -491,20 +491,25 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
                     setSelection({ type: "month", year: expandedYear, month });
                   }}
                 >
-                  <span className="z-[1] text-[13px] font-extrabold capitalize leading-none">{monthShortNames[month]}</span>
+                  <span aria-hidden="true" className="pointer-events-none absolute right-1.5 top-1 bg-gradient-to-br from-[#d4dde1]/80 to-[#d4dde1]/20 bg-clip-text text-[14px] font-bold capitalize leading-none text-transparent">
+                    {monthShortNames[month]}
+                  </span>
                   {showRunning ? (
-                    <span className={[
-                      "period-month-metrics running-month-metrics grid w-full gap-[2px] z-[1] [&_>_span]:flex",
-                      "[&_>_span]:items-center [&_>_span]:justify-center [&_>_span]:gap-[3px] [&_>_span]:min-w-0",
-                      "[&_>_span]:text-[color:#dce4e8] [&_svg]:w-[11px] [&_svg]:h-[11px] [&_svg]:[flex:0_0_auto]",
-                      "[&_>_span:nth-child(1)_svg]:text-[color:#e7a05b] [&_>_span:nth-child(2)_svg]:text-[color:#ee817d]",
-                      "[&_>_span:nth-child(3)_svg]:text-[color:#ed9b62] [&_b]:overflow-hidden [&_b]:font-display",
-                      "[&_b]:text-[12px] [&_b]:font-extrabold [&_b]:text-[ellipsis] [&_b]:whitespace-nowrap",
-                      "[&_small]:text-[color:#aab6bb] [&_small]:text-[9px]",
-                    ].join(" ")}>
-                      <span><Footprints /><b>{summary.runKm.toFixed(1)}</b><small>км</small></span>
-                      <span><HeartPulse /><b>{averageHr || "—"}</b><small>bpm</small></span>
-                      <span><Gauge /><b>{fmtPace(pace)}</b><small>/км</small></span>
+                    <span className="z-[1] grid w-full min-w-0 gap-1.5 tabular-nums">
+                      <span className="flex items-baseline justify-center gap-1 whitespace-nowrap text-[#ffc17f]">
+                        <b className="font-display text-[clamp(16px,2vw,23px)] font-extrabold leading-none">{summary.runKm.toFixed(1)}</b>
+                        <small className="text-[10px] font-semibold">км</small>
+                      </span>
+                      <span className="flex items-center justify-center gap-1.5 whitespace-nowrap text-[11px] font-semibold text-[#dce4e8]">
+                        <span className="inline-flex items-center gap-0.5">
+                          <Gauge size={11} className="shrink-0 text-[#e7a05b]" aria-hidden="true" />
+                          {fmtPace(pace)}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5">
+                          <HeartPulse size={11} className="shrink-0 text-[#ee817d]" aria-hidden="true" />
+                          {averageHr ?? "—"}
+                        </span>
+                      </span>
                     </span>
                   ) : showStrength ? (
                     <span className={[

@@ -119,13 +119,18 @@ function MonthAxisTick({ x, y, payload, days }) {
   if (!day) return null;
 
   return (
-    <text x={x} y={y} dy={8} textAnchor="middle"
-      fill={day.weekend ? "#f3ad92" : "#aebbc0"}
-      className={day.weekend
-        ? "text-[11px] font-bold max-[480px]:text-[8px]"
-        : "text-[11px] font-medium max-[480px]:hidden"}>
-      {day.label}
-    </text>
+    <g>
+      {day.weekend && (
+        <line x1={x - 3} x2={x + 3} y1={y - 4} y2={y - 4} stroke="#ffc17f" strokeWidth={2.5} strokeLinecap="round" />
+      )}
+      <text x={x} y={y} dy={9} textAnchor="middle"
+        fill={day.weekend ? "#ffd1a5" : "#aebbc0"}
+        className={day.weekend
+          ? "text-[12px] font-extrabold max-[620px]:text-[9px]"
+          : "text-[11px] font-medium max-[620px]:hidden"}>
+        {day.label}
+      </text>
+    </g>
   );
 }
 
