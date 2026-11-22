@@ -460,7 +460,9 @@ async def activity_splits(activity_id: int) -> dict[str, Any]:
 
 @app.get("/api/activities/{activity_id}/detail")
 @app.post("/api/activities/{activity_id}/detail")
-async def activity_detail(activity_id: int, request: Request) -> dict[str, Any]:
+async def activity_detail(
+    activity_id: int, request: Request, only_if_missing: bool = False,
+) -> dict[str, Any]:
     if activity_id <= 0:
         raise HTTPException(422, "Некорректный ID тренировки.")
     activity_key = str(activity_id)
@@ -472,14 +474,15 @@ async def activity_detail(activity_id: int, request: Request) -> dict[str, Any]:
         raise HTTPException(404, "Тренировка не найдена в истории.")
 
     user_id = account_id.get()
-    if request.method == "GET":
+    if request.method == "GET" or only_if_missing:
         saved = await run_in_threadpool(database.read_activity_detail, user_id, activity_key)
-        return {
-            **(saved or {}),
-            "activity_id": activity_id,
-            "description": known_activity.get("description"),
-            "details_saved": saved is not None,
-        }
+        if request.method == "GET" or saved is not None:
+            return {
+                **(saved or {}),
+                "activity_id": activity_id,
+                "description": known_activity.get("description"),
+                "details_saved": saved is not None,
+            }
 
     try:
         detail = await garmin_call("activity_detail", activity_id)

@@ -53,24 +53,33 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
     setDetailLoading(true);
     setDetailError("");
 
-    fetch(`/api/activities/${activityId}/detail`, {
-      method: refreshCount > 0 ? "POST" : "GET",
-      signal,
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        const result = await response.json().catch(() => null);
-        if (!response.ok) {
-          const message = typeof result?.detail === "string"
-            ? result.detail
-            : `Не удалось получить детали тренировки (HTTP ${response.status}). Попробуй ещё раз.`;
-          throw new Error(message);
-        }
-        if (!result || typeof result !== "object") {
-          throw new Error("Сервер вернул неожиданный ответ. Попробуй обновить детали ещё раз.");
-        }
-        return result;
-      })
+    async function requestDetails(method, query = "") {
+      const response = await fetch(`/api/activities/${activityId}/detail${query}`, {
+        method,
+        signal,
+        cache: "no-store",
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = typeof result?.detail === "string"
+          ? result.detail
+          : `Не удалось получить детали тренировки (HTTP ${response.status}). Попробуй ещё раз.`;
+        throw new Error(message);
+      }
+      if (!result || typeof result !== "object") {
+        throw new Error("Сервер вернул неожиданный ответ. Попробуй обновить детали ещё раз.");
+      }
+      return result;
+    }
+
+    async function loadDetails() {
+      if (refreshCount > 0) return requestDetails("POST");
+      const saved = await requestDetails("GET");
+      if (saved.details_saved || signal.aborted) return saved;
+      return requestDetails("POST", "?only_if_missing=true");
+    }
+
+    loadDetails()
       .then((result) => {
         if (signal.aborted) return;
         const cleanDetail = {
@@ -139,7 +148,7 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
           />
         )}
       </div>
-      {detailLoading && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{refreshCount > 0 ? "Обновляю детали из Garmin…" : "Загружаю сохранённые детали…"}</p>}
+      {detailLoading && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{refreshCount > 0 ? "Обновляю детали из Garmin…" : "Загружаю детали…"}</p>}
       {detailError && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{detailError}</p>}
       {detail?.description && (
         <section aria-label="Описание из Garmin" className="mt-3 rounded-xl border border-[#34424a] bg-[#202a30] p-3">
