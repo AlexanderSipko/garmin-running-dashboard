@@ -441,6 +441,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
           <div className="period-type-filters grid grid-cols-[repeat(2,_32px)] [justify-content:start] items-center gap-[7px] mb-5 [.period-summary-heading_&]:flex [.period-summary-heading_&]:gap-[7px] [.period-summary-heading_&]:m-0" aria-label="Типы тренировок">
             {[
               { id: "running", label: "Бег", icon: Footprints },
+              { id: "strength", label: "Силовые тренировки", icon: Dumbbell },
             ].map((type) => (
               <button
                 type="button"
