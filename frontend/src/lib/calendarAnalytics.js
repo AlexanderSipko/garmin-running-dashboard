@@ -56,3 +56,23 @@ export function summarizeCalendar(activities) {
 
   return { daySummaries, monthSummaries, yearSummaries };
 }
+
+const comparisonWeeks = 6;
+
+export function weeklyVolumeComparison(daySummaries, weekStart, weekKm, historyStart) {
+  const firstDay = new Date(
+    weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() - comparisonWeeks * 7
+  );
+  if (!historyStart || firstDay < historyStart) return null;
+
+  let previousKm = 0;
+  for (let offset = 0; offset < comparisonWeeks * 7; offset += 1) {
+    const day = new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() + offset);
+    previousKm += daySummaries.get(dayKey(day))?.runKm || 0;
+  }
+
+  const averageKm = previousKm / comparisonWeeks;
+  if (averageKm <= 0) return null;
+  const change = Math.round((weekKm / averageKm - 1) * 100);
+  return { averageKm, change: change === 0 ? 0 : change };
+}

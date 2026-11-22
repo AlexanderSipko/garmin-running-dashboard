@@ -101,8 +101,10 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
       const daysInMonth = new Date(chartYear, month + 1, 0).getDate();
       return Array.from({ length: daysInMonth }, (_, index) => {
         const day = index + 1;
-        const summary = daySummaries.get(dayKey(new Date(chartYear, month, day)));
-        return { label: String(day), runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,
+        const date = new Date(chartYear, month, day);
+        const summary = daySummaries.get(dayKey(date));
+        const weekday = date.getDay();
+        return { label: String(day), weekend: weekday === 0 || weekday === 6, runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,
           pace: summary?.runKm ? summary.runSeconds / summary.runKm : null,
           avgHr: summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
           strengthCount: summary?.strengthCount || 0 };

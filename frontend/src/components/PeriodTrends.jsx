@@ -114,8 +114,24 @@ function TrendCard({ data }) {
   );
 }
 
+function MonthAxisTick({ x, y, payload, days }) {
+  const day = days.get(payload.value);
+  if (!day) return null;
+
+  return (
+    <text x={x} y={y} dy={8} textAnchor="middle"
+      fill={day.weekend ? "#f3ad92" : "#aebbc0"}
+      className={day.weekend
+        ? "text-[11px] font-bold max-[480px]:text-[8px]"
+        : "text-[11px] font-medium max-[480px]:hidden"}>
+      {day.label}
+    </text>
+  );
+}
+
 function PeriodTrends({ data, periodLabel, showRunning, showStrength, periodSummary }) {
   const isDailyChart = periodLabel.startsWith("Дни ·");
+  const days = isDailyChart ? new Map(data.map((point) => [point.label, point])) : null;
   const showStrengthBars = showStrength && isDailyChart;
   const showCombinedChart = showRunning || showStrengthBars;
   const monthMetrics = [];
@@ -147,7 +163,10 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, periodSumm
                   ))}
                 </defs>
                 <CartesianGrid vertical={false} stroke="#ffffff10" />
-                <XAxis dataKey="label" axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={16} tick={{ fill: "#aebbc0", fontSize: 14, fontWeight: 600 }} tickMargin={9} />
+                <XAxis dataKey="label" axisLine={false} tickLine={false}
+                  interval={isDailyChart ? 0 : "preserveStartEnd"} minTickGap={16}
+                  tick={isDailyChart ? <MonthAxisTick days={days} /> : { fill: "#aebbc0", fontSize: 14, fontWeight: 600 }}
+                  tickMargin={9} />
                 <YAxis yAxisId="distance" hide domain={[0, "dataMax + 2"]} />
                 <YAxis yAxisId="pace" hide orientation="right" reversed domain={["dataMin - 30", "dataMax + 30"]} />
                 <YAxis yAxisId="heart" hide orientation="right" domain={["dataMin - 8", "dataMax + 8"]} />

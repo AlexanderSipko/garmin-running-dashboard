@@ -1,7 +1,10 @@
 import { Fragment } from "react";
 import { Gauge, HeartPulse } from "lucide-react";
-import { dayKey } from "../lib/calendarAnalytics";
+import { dayKey, weeklyVolumeComparison } from "../lib/calendarAnalytics";
 import { fmtPace } from "../lib/format";
+
+const percent = new Intl.NumberFormat("ru-RU", { style: "percent", signDisplay: "exceptZero" });
+const distance = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
 
 const weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
@@ -18,6 +21,15 @@ export default function MonthDayCalendar({
   expandedYear, calendarMonth, monthNames, daySummaries, selectedTypes, selection, onSelectDay,
 }) {
   const calendarWeeks = buildWeeks(expandedYear, calendarMonth);
+  const today = new Date();
+  const showRunning = selectedTypes.includes("running");
+  let historyStart = null;
+  for (const key of daySummaries.keys()) {
+    const [year, month, day] = key.split("-").map(Number);
+    const date = new Date(year, month, day);
+    if (!historyStart || date < historyStart) historyStart = date;
+  }
+
   return (
     <div className="period-month-days mt-3 mx-0 mb-1">
       <div className="period-month-days-heading mb-2 text-[#e0e8eb] text-[16px] font-extrabold capitalize">
@@ -33,9 +45,24 @@ export default function MonthDayCalendar({
           const weekSeconds = weekRuns.reduce((sum, item) => sum + item.runSeconds, 0);
           const weekHrWeight = weekRuns.reduce((sum, item) => sum + item.hrWeight, 0);
           const weekHrSeconds = weekRuns.reduce((sum, item) => sum + item.hrSeconds, 0);
+          const weekStart = week.days[0];
+          const nextMonday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 7);
+          const comparison = showRunning && weekStart <= today
+            ? weeklyVolumeComparison(daySummaries, weekStart, weekKm, historyStart)
+            : null;
+          const comparisonText = comparison && percent.format(comparison.change / 100);
+          const comparisonHint = comparison && `${comparisonText} к среднему за предыдущие 6 недель (${distance.format(comparison.averageKm)} км)${today < nextMonday ? ". Текущая неделя ещё идёт." : ""}`;
           return <Fragment key={weekIndex}>
             <div className="col-span-7 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-[#ffffff0d] bg-[#ffffff06] px-2 py-1 text-xs tabular-nums max-[480px]:gap-x-2 font-semibold text-[color:var(--soft)]">
-              <span>{weekKm.toFixed(1)} км</span>
+              <span className="inline-flex items-center gap-1.5">
+                {weekKm.toFixed(1)} км
+                {comparison && (
+                  <span title={comparisonHint} aria-label={comparisonHint}
+                    className={`rounded bg-white/6 px-1.5 py-0.5 text-[11px] ${comparison.change > 0 ? "text-[#f3bc7f]" : comparison.change < 0 ? "text-[#a9c2f5]" : "text-slate-300"}`}>
+                    {comparisonText}
+                  </span>
+                )}
+              </span>
               <span className="inline-flex items-center gap-1"><Gauge size={12} aria-label="Темп" />{weekKm ? `${fmtPace(weekSeconds / weekKm)}/км` : "—"}</span>
               <span className="inline-flex items-center gap-1"><HeartPulse size={12} aria-label="Пульс" />{weekHrWeight ? `${Math.round(weekHrSeconds / weekHrWeight)} уд/мин` : "—"}</span>
             </div>
@@ -46,7 +73,7 @@ export default function MonthDayCalendar({
               const outsideMonth = month !== calendarMonth;
               const monthName = monthNames[month];
               const daily = daySummaries.get(dayKey(date)) || { runKm: 0, runCount: 0, strengthCount: 0 };
-              const hasRun = selectedTypes.includes("running") && daily.runCount > 0;
+              const hasRun = showRunning && daily.runCount > 0;
               const hasStrength = selectedTypes.includes("strength") && daily.strengthCount > 0;
               const daySelected = selection.type === "day" && selection.year === year && selection.month === month && selection.day === day;
               return (
