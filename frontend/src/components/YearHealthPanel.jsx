@@ -16,16 +16,25 @@ const dailyMetrics = [
 const localDateKey = (value) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 const dayLabel = new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "short" });
 
+function hasMetricValue(value) {
+  return value != null && value !== "" && Number.isFinite(Number(value));
+}
+
 function RecentWellness({ wellness }) {
   const today = new Date();
+  const todayKey = localDateKey(today);
+  const hasToday = dailyMetrics.some(({ key }) =>
+    wellness?.metrics?.[key]?.some(({ date, value }) => date === todayKey && hasMetricValue(value))
+  );
+  const firstDayOffset = hasToday ? 0 : 1;
   const days = Array.from({ length: 8 }, (_, index) =>
-    new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1 - index)
+    new Date(today.getFullYear(), today.getMonth(), today.getDate() - firstDayOffset - index)
   );
   const dateKeys = new Set(days.map(localDateKey));
   const valuesByMetric = Object.fromEntries(dailyMetrics.map(({ key }) => [
     key,
     new Map((wellness?.metrics?.[key] || [])
-      .filter(({ date, value }) => dateKeys.has(date) && value != null && Number.isFinite(Number(value)))
+      .filter(({ date, value }) => dateKeys.has(date) && hasMetricValue(value))
       .map(({ date, value }) => [date, Number(value)])),
   ]));
   const trendRules = {
@@ -38,11 +47,11 @@ function RecentWellness({ wellness }) {
     return [key, values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null];
   }));
   return (
-    <section className="mb-4" aria-label="Показатели здоровья за последние 8 завершённых дней">
+    <section className="mb-4" aria-label="Показатели здоровья за последние 8 дней">
       <h2 className="mb-2 text-[15px] font-bold">Здоровье · 8 последних дней</h2>
       <div className="mb-2 h-[150px] w-full rounded-lg border border-[#3b4a50] bg-[#202c31] p-2" aria-label="График сна, ВСР и пульса покоя за 8 дней">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={days.slice(0, 8).reverse().map((day) => {
+          <ComposedChart data={[...days].reverse().map((day) => {
             const date = localDateKey(day);
             return {
               label: day.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }),
