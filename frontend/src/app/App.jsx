@@ -17,6 +17,7 @@ function Dashboard({ demo, account, planRevision }) {
     ].join(" ")}>
       <CalendarPeriodExplorer
         activities={dashboard.activities}
+        onActivityUpdated={dashboard.replaceActivity}
         busy={dashboard.busy}
         error={dashboard.error}
         onSync={account?.garmin ? dashboard.sync : undefined}

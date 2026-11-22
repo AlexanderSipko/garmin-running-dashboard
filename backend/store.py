@@ -58,6 +58,14 @@ class Database:
             connection.execute("CREATE TABLE IF NOT EXISTS user_data (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, payload TEXT NOT NULL DEFAULT '{}')")
 
             connection.execute("CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL)")
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS activity_details (
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    activity_id TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY (user_id, activity_id)
+                )
+            """)
 
     def register_user(self, email: str, password_hash: str) -> str | None:
         user_id = secrets.token_urlsafe(18)
@@ -128,18 +136,42 @@ class Database:
             ).fetchone()
         return json.loads(row[0]) if row else {}
 
-    def update(self, user_id: str, callback: Callable[[dict], None]) -> None:
+    def read_activity_detail(self, user_id: str, activity_id: str) -> dict | None:
         mark = self.json_parameter()
         with self.transaction() as connection:
-            if not self.is_postgres:
-                connection.execute("BEGIN IMMEDIATE")
-            lock = " FOR UPDATE" if self.is_postgres else ""
             row = connection.execute(
-                f"SELECT payload FROM user_data WHERE user_id = {mark}{lock}", (user_id,)
+                f"SELECT payload FROM activity_details WHERE user_id = {mark} AND activity_id = {mark}",
+                (user_id, activity_id),
             ).fetchone()
-            data = json.loads(row[0])
-            callback(data)
+        return json.loads(row[0]) if row else None
+
+    def update_activity_detail(
+        self, user_id: str, activity_id: str, detail: dict, callback: Callable[[dict], None],
+    ) -> None:
+        mark = self.json_parameter()
+        with self.transaction() as connection:
+            self._update_user_data(connection, user_id, callback)
             connection.execute(
-                f"UPDATE user_data SET payload = {mark} WHERE user_id = {mark}",
-                (json.dumps(data, ensure_ascii=False), user_id),
+                f"INSERT INTO activity_details (user_id, activity_id, payload) VALUES ({mark}, {mark}, {mark}) "
+                "ON CONFLICT (user_id, activity_id) DO UPDATE SET payload = excluded.payload",
+                (user_id, activity_id, json.dumps(detail, ensure_ascii=False)),
             )
+
+    def update(self, user_id: str, callback: Callable[[dict], None]) -> None:
+        with self.transaction() as connection:
+            self._update_user_data(connection, user_id, callback)
+
+    def _update_user_data(self, connection, user_id: str, callback: Callable[[dict], None]) -> None:
+        mark = self.json_parameter()
+        if not self.is_postgres:
+            connection.execute("BEGIN IMMEDIATE")
+        lock = " FOR UPDATE" if self.is_postgres else ""
+        row = connection.execute(
+            f"SELECT payload FROM user_data WHERE user_id = {mark}{lock}", (user_id,)
+        ).fetchone()
+        data = json.loads(row[0])
+        callback(data)
+        connection.execute(
+            f"UPDATE user_data SET payload = {mark} WHERE user_id = {mark}",
+            (json.dumps(data, ensure_ascii=False), user_id),
+        )

@@ -459,24 +459,68 @@ async def activity_splits(activity_id: int) -> dict[str, Any]:
 
 
 @app.get("/api/activities/{activity_id}/detail")
-async def activity_detail(activity_id: int) -> dict[str, Any]:
+@app.post("/api/activities/{activity_id}/detail")
+async def activity_detail(activity_id: int, request: Request) -> dict[str, Any]:
     if activity_id <= 0:
-        raise HTTPException(status_code=422, detail="Некорректный ID тренировки.")
-    known_activity = any(
-        str(activity.get("id")) == str(activity_id)
-        for activity in read_store().get("activities", [])
+        raise HTTPException(422, "Некорректный ID тренировки.")
+    activity_key = str(activity_id)
+    known_activity = next(
+        (row for row in read_store().get("activities", []) if str(row.get("id")) == activity_key),
+        None,
     )
-    if not known_activity:
-        raise HTTPException(status_code=404, detail="Тренировка не найдена в Garmin.")
+    if known_activity is None:
+        raise HTTPException(404, "Тренировка не найдена в истории.")
+
+    user_id = account_id.get()
+    if request.method == "GET":
+        saved = await run_in_threadpool(database.read_activity_detail, user_id, activity_key)
+        return {
+            **(saved or {}),
+            "activity_id": activity_id,
+            "description": known_activity.get("description"),
+            "details_saved": saved is not None,
+        }
 
     try:
         detail = await garmin_call("activity_detail", activity_id)
-    except Exception:
-        raise HTTPException(
-            status_code=502,
-            detail="Не удалось загрузить подробные данные тренировки из Garmin.",
-        ) from None
-    return {"activity_id": activity_id, **detail}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Garmin activity detail failed: %s", type(exc).__name__)
+        raise HTTPException(502, "Не удалось загрузить подробные данные тренировки из Garmin.") from None
+
+    fields = detail.pop("activity", {})
+    fields.pop("id", None)
+
+    updated_activity = None
+
+    def replace_activity(store: dict[str, Any]) -> None:
+        nonlocal updated_activity
+        rows = store.get("activities", [])
+        for index, previous in enumerate(rows):
+            if str(previous.get("id")) == activity_key:
+                updated_activity = {**previous, **fields}
+                if updated_activity != previous:
+                    rows[index] = updated_activity
+                    rows.sort(key=lambda row: str(row.get("start_time") or ""), reverse=True)
+                    store.pop("coach_daily", None)
+                return
+        raise HTTPException(404, "Тренировка больше не найдена в истории.")
+
+    try:
+        await run_in_threadpool(database.update_activity_detail, user_id, activity_key, detail, replace_activity)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Activity refresh could not write to the database: %s", type(exc).__name__)
+        raise HTTPException(503, "Не удалось сохранить обновлённую тренировку. Попробуй ещё раз.") from None
+    return {
+        "activity_id": activity_id,
+        **detail,
+        "details_saved": True,
+        "activity": updated_activity,
+        "description": updated_activity.get("description"),
+    }
 
 
 def incremental_sync_start(

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { buildPublicDemoDashboard } from "../data/demoDashboard";
 import { hasWellnessForDay, localDateKey } from "../lib/wellnessDates";
 
@@ -77,8 +77,19 @@ function useGarminDashboard(publicDemo) {
     }
   };
 
+  const replaceActivity = useCallback((updated) => {
+    setData((current) => {
+      const activities = (current.activities ?? []).map((activity) =>
+        String(activity.id) === String(updated.id) ? updated : activity
+      );
+      activities.sort((first, second) => String(second.start_time || "").localeCompare(String(first.start_time || "")));
+      return { ...current, activities };
+    });
+  }, []);
+
   return {
     activities: data.activities ?? [],
+    replaceActivity,
     wellness: data.wellness,
     syncedAt: data?.connection?.synced_at || null,
     busy,

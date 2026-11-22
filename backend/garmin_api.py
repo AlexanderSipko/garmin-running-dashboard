@@ -17,7 +17,7 @@ def _clean_activity(row: dict[str, Any]) -> dict[str, Any]:
         activity_type = activity_type.get("typeKey") or activity_type.get("typeName")
     values = {
         "id": row.get("activityId"),
-        "name": row.get("activityName") or "Пробежка",
+        "name": row.get("activityName"),
         "type": activity_type,
         "start_time": row.get("startTimeLocal") or row.get("startTimeGMT"),
         "distance_meters": row.get("distance"),
@@ -293,11 +293,20 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         token.access_token, timeout=settings.garmin_activity_timeout_seconds
     ) as client:
         activity = client.get_activity(activity_id)
-        splits = _split_rows(activity) if isinstance(activity, dict) else []
-        description = activity.get("description") if isinstance(activity, dict) else None
-        if not isinstance(description, str) and isinstance(activity, dict):
-            nested = activity.get("activity")
-            description = nested.get("description") if isinstance(nested, dict) else None
+        if not isinstance(activity, dict):
+            raise ValueError("Unexpected Garmin activity response")
+        nested = activity.get("activity")
+        raw = {**activity, **nested} if isinstance(nested, dict) else activity
+        if raw.get("activityId") is not None and str(raw["activityId"]) != activity_id:
+            raise ValueError("Garmin activity ID did not match the request")
+
+        splits = _split_rows(activity)
+        summary = raw.get("summaryDTO")
+        fields = {**summary, **raw} if isinstance(summary, dict) else raw
+        refreshed_activity = _clean_activity(fields)
+        if "description" in raw:
+            note = raw["description"]
+            refreshed_activity["description"] = note.strip() if isinstance(note, str) else None
         try:
             file_bytes = client.download_activity(activity_id)
             points, sample_count = _fit_track_rows(file_bytes)
@@ -307,7 +316,8 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
             track_message = "Garmin не вернул исходный FIT-файл этой тренировки."
 
     return {
-        "description": description.strip() if isinstance(description, str) else None,
+        "description": refreshed_activity.get("description"),
+        "activity": refreshed_activity,
         "splits": splits,
         "points": points,
         "sample_count": sample_count,

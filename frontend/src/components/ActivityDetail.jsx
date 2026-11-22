@@ -1,10 +1,10 @@
 import SectionEyebrow from "./SectionEyebrow";
 import { useEffect, useState } from "react";
-import { Clock3, Footprints, Gauge, Heart, Route } from "lucide-react";
+import { Clock3, Footprints, Gauge, Heart, RefreshCw, Route } from "lucide-react";
 import { fmtDate, fmtDuration, fmtPace } from "../lib/format";
 import ActivityTrackCharts from "./ActivityTrackCharts";
 
-function ActivityDetail({ date, activities, detailCache }) {
+function ActivityDetail({ date, activities, detailCache, onActivityUpdated }) {
   return (
     <section className="activity-detail pt-[15px] px-0 pb-0 mt-[14px] [border-top:1px_solid_var(--border)]">
       <div className="activity-detail-heading flex items-center justify-between gap-[14px] [&_h3]:mt-1 mx-0 mb-3 [&_h3]:[font:600_14px_Manrope,_sans-serif] [&_h3]:capitalize">
@@ -22,7 +22,7 @@ function ActivityDetail({ date, activities, detailCache }) {
 
       {activities.length ? (
         activities.map((activity, index) => (
-          <ActivitySummary activity={activity} detailCache={detailCache} key={activity.id || index} />
+          <ActivitySummary activity={activity} detailCache={detailCache} onActivityUpdated={onActivityUpdated} key={activity.id || index} />
         ))
       ) : (
         <p className="rest-day-message mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">В этот день тренировок нет.</p>
@@ -31,7 +31,7 @@ function ActivityDetail({ date, activities, detailCache }) {
   );
 }
 
-function ActivitySummary({ activity, detailCache }) {
+function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
   const distanceKm = Number(activity.distance_meters || 0) / 1000;
   const durationSeconds = Number(
     activity.moving_duration_seconds || activity.duration_seconds || 0
@@ -43,25 +43,38 @@ function ActivitySummary({ activity, detailCache }) {
   const [detail, setDetail] = useState(() => detailCache.get(activityId) ?? null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const [refreshCount, setRefreshCount] = useState(0);
 
   useEffect(() => {
-    if (!canLoadDetails || detail !== null) return undefined;
+    if (!canLoadDetails || (refreshCount === 0 && detailCache.has(activityId))) return;
 
-    let active = true;
+    const controller = new AbortController();
+    const { signal } = controller;
     setDetailLoading(true);
     setDetailError("");
 
-    fetch(`/api/activities/${activityId}/detail`)
+    fetch(`/api/activities/${activityId}/detail`, {
+      method: refreshCount > 0 ? "POST" : "GET",
+      signal,
+      cache: "no-store",
+    })
       .then(async (response) => {
-        const result = await response.json();
+        const result = await response.json().catch(() => null);
         if (!response.ok) {
-          throw new Error(result.detail || "Не удалось получить детали тренировки.");
+          const message = typeof result?.detail === "string"
+            ? result.detail
+            : `Не удалось получить детали тренировки (HTTP ${response.status}). Попробуй ещё раз.`;
+          throw new Error(message);
+        }
+        if (!result || typeof result !== "object") {
+          throw new Error("Сервер вернул неожиданный ответ. Попробуй обновить детали ещё раз.");
         }
         return result;
       })
       .then((result) => {
-        if (!active) return;
+        if (signal.aborted) return;
         const cleanDetail = {
+          saved: Boolean(result.details_saved),
           description: typeof result.description === "string" ? result.description : "",
           splits: Array.isArray(result.splits) ? result.splits : [],
           points: Array.isArray(result.points) ? result.points : [],
@@ -71,26 +84,35 @@ function ActivitySummary({ activity, detailCache }) {
         };
         detailCache.set(activityId, cleanDetail);
         setDetail(cleanDetail);
+        if (result.activity) onActivityUpdated(result.activity);
       })
       .catch((error) => {
-        if (active) setDetailError(error.message);
+        if (!signal.aborted) setDetailError(error.message);
       })
       .finally(() => {
-        if (active) setDetailLoading(false);
+        if (!signal.aborted) setDetailLoading(false);
       });
 
-    return () => {
-      active = false;
-    };
-  }, [activityId, canLoadDetails, detail, detailCache]);
+    return () => controller.abort();
+  }, [activityId, canLoadDetails, detailCache, refreshCount, onActivityUpdated]);
 
   const splits = detail?.splits || [];
 
   return (
     <article className="activity-detail-run py-3 px-0 [border-top:1px_solid_var(--border)] [&_h4]:flex [&_h4]:items-center [&_h4]:gap-2 [&_h4]:mt-0 mx-0 mb-3 [&_h4]:text-[13px] [&_h4_svg]:text-[color:var(--accent)]">
-      <h4>
-        <Footprints size={16} /> {activity.name || "Пробежка"}
-      </h4>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="flex items-center gap-2 text-sm font-bold">
+          <Footprints size={16} className="text-[color:var(--accent)]" aria-hidden="true" />
+          {activity.name || "Пробежка"}
+        </h4>
+        {canLoadDetails && (
+          <button type="button" disabled={detailLoading} onClick={() => setRefreshCount((count) => count + 1)}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[#46545b] px-2.5 text-xs font-semibold text-[#e5ebee] hover:bg-[#26363d] disabled:opacity-60">
+            <RefreshCw size={14} className={detailLoading ? "animate-spin" : undefined} aria-hidden="true" />
+            {detailLoading ? "Обновляю…" : "Обновить детали"}
+          </button>
+        )}
+      </div>
       <div className="activity-detail-metrics grid grid-cols-[repeat(4,_1fr)] gap-2 max-[760px]:grid-cols-[repeat(2,_1fr)]">
         <DetailMetric
           icon={<Route size={15} />}
@@ -117,7 +139,7 @@ function ActivitySummary({ activity, detailCache }) {
           />
         )}
       </div>
-      {detailLoading && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">Загружаю подробную запись тренировки из Garmin…</p>}
+      {detailLoading && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{refreshCount > 0 ? "Обновляю детали из Garmin…" : "Загружаю сохранённые детали…"}</p>}
       {detailError && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{detailError}</p>}
       {detail?.description && (
         <section aria-label="Описание из Garmin" className="mt-3 rounded-xl border border-[#34424a] bg-[#202a30] p-3">
@@ -125,10 +147,13 @@ function ActivitySummary({ activity, detailCache }) {
           <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{detail.description}</p>
         </section>
       )}
-      {detail && <ActivityTrackCharts points={detail.points} />}
+      {detail && !detail.saved && !detailLoading && (
+        <p className="mt-3 text-xs text-[color:var(--muted)]">Детали ещё не сохранены. Нажми «Обновить детали», чтобы загрузить их из Garmin.</p>
+      )}
+      {detail?.saved && <ActivityTrackCharts points={detail.points} />}
       {detail?.trackMessage && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{detail.trackMessage}</p>}
       {splits.length > 0 && <SplitList splits={splits} />}
-      {detail && !splits.length && !detail.trackAvailable && !detail.trackMessage && (
+      {detail?.saved && !splits.length && !detail.trackAvailable && !detail.trackMessage && (
         <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">Для этой тренировки Garmin не вернул сплиты или точки записи.</p>
       )}
       {!canLoadDetails && isRun && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">Подробности доступны для синхронизированных Garmin-тренировок.</p>}
