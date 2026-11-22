@@ -37,7 +37,7 @@ function DayMetric({ label, icon: Icon, iconClass, value, unit, digits = 0, rule
   const isGood = changed && (rule.higherIsBetter ? delta > 0 : delta < 0);
 
   return (
-    <div className="grid min-w-0 content-start gap-1 rounded-lg bg-[#17252b] px-2.5 py-2" title={note}>
+    <div className="grid min-w-0 content-start gap-1 px-2.5 py-2 odd:border-r odd:border-[#95acb326] [&:nth-child(n+3)]:border-t [&:nth-child(n+3)]:border-[#95acb326]" title={note}>
       <dt className="flex items-center gap-1.5 text-[11px] font-medium leading-tight text-[#bbc8cd]">
         {Icon && <Icon size={13} className={`shrink-0 ${iconClass}`} aria-hidden="true" />}
         {label}
@@ -144,10 +144,10 @@ function RecentWellness({ wellness }) {
           const showHrv = nightlyHrv != null || hrvAverage != null;
 
           return (
-            <article key={date} className="rounded-xl border border-[#3b4a50] bg-[#202c31] p-2.5">
+            <article key={date} className="rounded-xl border border-[#3b4a50] bg-linear-to-br from-[#23333a] via-[#202c31] to-[#1a272d] p-2.5">
               <time dateTime={date} className="mb-2 block text-sm font-bold capitalize">{dayLabel.format(day)}</time>
               {available.length || showHrv ? (
-                <dl className="grid grid-cols-2 gap-1.5">
+                <dl className="grid grid-cols-2 border-t border-[#95acb326]">
                   {showHrv && <>
                     <DayMetric label="ВЧП за ночь" icon={HeartPulse} iconClass="text-[#ef8490]"
                       value={nightlyHrv} unit="мс" rule={trendRules.hrv} average={averages.hrv} />

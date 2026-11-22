@@ -211,14 +211,10 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
 
                   
                   <span className={[
-                    "period-year-metric distance flex items-center justify-center gap-[3px] min-w-0 p-[2px]",
-                    "text-[color:#f0f4f5] whitespace-nowrap [&_small]:text-[color:#9aaab2] [&_small]:text-[8px]",
-                    "[&_svg]:w-[15px] [&_svg]:h-[15px] [&_svg]:[flex:0_0_auto] [&_svg]:text-[color:#e5aa62]",
-                    "[&.distance_svg]:text-[color:#e5aa62] [.period-year-metric&_svg]:text-[color:#e5aa62]",
-                    "[&.pulse_svg]:text-[color:#f18c8c] [&.pace_svg]:text-[color:#91a6ff] [&_b]:overflow-hidden",
-                    "[&_b]:text-[color:#dce4e8] [&_b]:font-display [&_b]:text-[13px] [&_b]:font-extrabold",
-                    "[&_b]:tracking-[-0.04em] [&_b]:text-[ellipsis] [&_b]:whitespace-nowrap max-[760px]:[&_b]:text-[11px]",
-                    "[.trend-legend-item&]:text-[color:#9fd75e] [.trend-chart-series&]:text-[color:#9fd75e]",
+                    "period-year-metric distance flex min-w-0 items-baseline justify-center gap-1 whitespace-nowrap p-0.5 text-[#ffc17f]",
+                    "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:self-center [&_svg]:text-[#e5aa62]",
+                    "[&_b]:truncate [&_b]:font-display [&_b]:text-[21px] [&_b]:font-extrabold [&_b]:leading-tight",
+                    "[&_b]:tabular-nums [&_small]:text-[10px] [&_small]:font-semibold max-[760px]:[&_b]:text-[18px]",
                   ].join(" ")} title="Общая дистанция бега">
                       <Footprints /><b>{summary.runKm.toFixed(1)}</b><small>км</small>
                     </span>
