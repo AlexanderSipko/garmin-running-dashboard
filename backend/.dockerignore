@@ -1,0 +1,22 @@
+# Keep Garmin history and bearer-token cache out of every backend image layer.
+data/
+**/data/
+
+# Runtime credentials and local-only configuration.
+.env
+.env.*
+*.token
+*.token.json
+*.pem
+*.crt
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Local Python artifacts.
+__pycache__/
+*.py[cod]
+.venv/
+venv/

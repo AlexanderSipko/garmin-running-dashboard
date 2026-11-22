@@ -1,0 +1,187 @@
+import { useEffect, useMemo, useState } from "react";
+
+const summaryCache = new Map();
+const summaryInFlight = new Map();
+const summaryErrors = new Map();
+
+function toDateString(value) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function buildRequestPeriod(period, start, end) {
+  let previousStart;
+  let previousEnd;
+
+  if (period === "year") {
+    previousStart = new Date(start.getFullYear() - 1, 0, 1);
+    previousEnd = new Date(start.getFullYear() - 1, 11, 31);
+  } else if (period === "month") {
+    previousStart = new Date(start.getFullYear(), start.getMonth() - 1, 1);
+    previousEnd = new Date(start.getFullYear(), start.getMonth(), 0);
+  } else if (period === "day") {
+    previousStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1);
+    previousEnd = previousStart;
+  } else {
+    previousEnd = new Date(start);
+    previousEnd.setDate(previousEnd.getDate() - 1);
+    previousStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 7);
+  }
+
+  return {
+    start_date: toDateString(start),
+    end_date: toDateString(end),
+    previous_start_date: toDateString(previousStart),
+    previous_end_date: toDateString(previousEnd),
+  };
+}
+
+async function postJson(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(result.detail || "Не удалось получить ответ агента.");
+    error.status = response.status;
+    throw error;
+  }
+  return result;
+}
+
+function requestSummary(key, payload, { retry = false } = {}) {
+  if (summaryCache.has(key)) return Promise.resolve(summaryCache.get(key));
+  if (summaryInFlight.has(key)) return summaryInFlight.get(key);
+  if (!retry && summaryErrors.has(key)) return Promise.reject(summaryErrors.get(key));
+  const request = postJson("/api/coach/summary", payload)
+    .then((result) => {
+      summaryCache.set(key, result);
+      summaryErrors.delete(key);
+      return result;
+    })
+    .catch((error) => {
+      summaryErrors.set(key, error);
+      throw error;
+    })
+    .finally(() => summaryInFlight.delete(key));
+  summaryInFlight.set(key, request);
+  return request;
+}
+
+function useRunningCoach({
+  period,
+  periodStart,
+  periodEnd,
+  syncedAt,
+  enabled,
+}) {
+  const [status, setStatus] = useState(null);
+  const [summary, setSummary] = useState("");
+  const [summaryUsage, setSummaryUsage] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+
+  const requestPeriod = useMemo(
+    () => buildRequestPeriod(period, periodStart, periodEnd),
+    [period, periodStart, periodEnd]
+  );
+  const cacheKey = `${period}:${requestPeriod.start_date}:${
+    requestPeriod.end_date
+  }:${syncedAt || "unsynced"}`;
+
+  useEffect(() => {
+    fetch("/api/coach/status")
+      .then((response) => response.json())
+      .then(setStatus)
+      .catch(() => setStatus({ configured: false, unavailable: true }));
+  }, []);
+
+  useEffect(() => {
+    setMessages([]);
+    setError("");
+    setSummary(summaryCache.get(cacheKey)?.answer || "");
+    setSummaryUsage(summaryCache.get(cacheKey)?.usage || null);
+  }, [cacheKey]);
+
+  const refreshSummary = async () => {
+    summaryCache.delete(cacheKey);
+    summaryErrors.delete(cacheKey);
+    setLoadingSummary(true);
+    setError("");
+    try {
+      const result = await requestSummary(cacheKey, requestPeriod, { retry: true });
+      setSummary(result.answer);
+      setSummaryUsage(result.usage);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoadingSummary(false);
+    }
+  };
+
+  const ask = async (question) => {
+    const cleanQuestion = question.trim();
+    if (!cleanQuestion || sending) return;
+
+    const conversation = messages.map(({ role, content }) => ({
+      role,
+      content,
+    }));
+    setMessages((current) => [
+      ...current,
+      { role: "user", content: cleanQuestion, usage: null },
+    ]);
+    setSending(true);
+    setError("");
+
+    try {
+      const result = await postJson("/api/coach/chat", {
+        ...requestPeriod,
+        question: cleanQuestion,
+        conversation,
+      });
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", content: result.answer, usage: result.usage },
+      ]);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const totalTokens =
+    (summaryUsage?.total_tokens || 0) +
+    messages.reduce(
+      (sum, message) => sum + (message.usage?.total_tokens || 0),
+      0
+    );
+
+  return {
+    enabled: status?.enabled !== false,
+    configured: Boolean(status?.configured),
+    unavailable: Boolean(status?.unavailable),
+    statusChecked: status !== null,
+    model: status?.model || "",
+    provider: status?.provider || "",
+    summary,
+    summaryUsage,
+    messages,
+    loadingSummary,
+    sending,
+    error,
+    totalTokens,
+    ask,
+    refreshSummary,
+  };
+}
+
+export default useRunningCoach;

@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      GARMIN_PERSONAL_API_KEY: ${GARMIN_PERSONAL_API_KEY}
+      GARMIN_BEARER_TOKEN_CACHE: ${GARMIN_BEARER_TOKEN_CACHE:-/app/data/garmin-bearer-token.json}
+      GARMIN_DATA_FILE: ${GARMIN_DATA_FILE:-/app/data/dashboard.json}
+      COACH_ENABLED: ${COACH_ENABLED:-false}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat-2}
+      GIGACHAT_CA_BUNDLE: ${GIGACHAT_CA_BUNDLE:-}
+    volumes:
+      - ./backend/data:/app/data
+      - ./certs:/app/certs:ro
+    expose:
+      - "8000"
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - backend
