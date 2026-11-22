@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import AccountPanel, { accountRequest } from "../components/AccountPanel";
+import { ConnectionGuide, DemoIntro, guideHash } from "../components/DemoGuide";
 import CalendarPeriodExplorer from "../components/CalendarPeriodExplorer";
 import useGarminDashboard from "../hooks/useGarminDashboard";
 
@@ -31,6 +32,16 @@ function Dashboard({ demo, account }) {
 export default function App() {
   const demoOnly = import.meta.env.VITE_PUBLIC_DEMO === "true";
   const [account, setAccount] = useState(null);
+  const [showGuide, setShowGuide] = useState(() => window.location.hash === guideHash);
+
+  useEffect(() => {
+    function updatePage() {
+      setShowGuide(window.location.hash === guideHash);
+      window.scrollTo(0, 0);
+    }
+    window.addEventListener("hashchange", updatePage);
+    return () => window.removeEventListener("hashchange", updatePage);
+  }, []);
 
   useEffect(() => {
     if (demoOnly) return;
@@ -42,7 +53,12 @@ export default function App() {
   return (
     <>
       {!demoOnly && <AccountPanel account={account} onChange={setAccount} />}
-      <Dashboard key={account?.id || "demo"} demo={!account} account={account} />
+      {showGuide ? <ConnectionGuide /> : (
+        <>
+          {!account && <DemoIntro />}
+          <Dashboard key={account?.id || "demo"} demo={!account} account={account} />
+        </>
+      )}
     </>
   );
 }
