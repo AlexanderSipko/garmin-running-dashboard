@@ -16,39 +16,43 @@ const dailyMetrics = [
 ];
 const dayLabel = new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "short" });
 
-const hrvDateLabel = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
+function rollingHrv(day, measurements) {
+  const values = [];
+  for (let offset = 0; offset < 7; offset += 1) {
+    const date = new Date(day.getFullYear(), day.getMonth(), day.getDate() - offset);
+    const measurement = measurements.get(localDateKey(date));
+    if (measurement != null) values.push(measurement);
+  }
+  if (!values.length) return null;
+  return {
+    value: Math.round(values.reduce((sum, value) => sum + value, 0) / values.length),
+    count: values.length,
+  };
+}
 
-function HrvSnapshot({ days, values }) {
-  const week = days.slice(0, 7)
-    .map((day) => values.get(localDateKey(day)))
-    .filter((value) => value != null);
-  const latestDay = days.find((day) => values.has(localDateKey(day)));
-  const latest = latestDay ? values.get(localDateKey(latestDay)) : null;
-  const average = week.length
-    ? Math.round(week.reduce((sum, value) => sum + value, 0) / week.length)
-    : null;
+function DayMetric({ label, icon: Icon, iconClass, value, unit, digits = 0, rule, average, note }) {
+  const hasTrend = value != null && rule && average != null;
+  const delta = hasTrend ? value - average : 0;
+  const changed = hasTrend && Math.abs(delta) >= rule.tolerance;
+  const isGood = changed && (rule.higherIsBetter ? delta > 0 : delta < 0);
 
   return (
-    <div className="mb-2 rounded-lg border border-[#3b4a50] bg-[#202c31] px-3 py-2.5">
-      <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold text-[#ef8490]">
-        <HeartPulse size={14} aria-hidden="true" /> ВЧП
-      </h3>
-      <dl className="grid grid-cols-2 gap-3 text-[11px] text-[#b4bfc4]">
-        <div>
-          <dt>Среднее за 7 дней</dt>
-          <dd className="mt-0.5 text-xl font-bold tabular-nums text-[#e5ebee]">
-            {average == null ? "—" : <>{average} <span className="text-xs font-normal">мс</span></>}
-          </dd>
-          {week.length < 7 && <p>{week.length ? `Есть данные за ${week.length} из 7 дней` : "Нет измерений"}</p>}
-        </div>
-        <div>
-          <dt>Последняя ночь</dt>
-          <dd className="mt-0.5 text-xl font-bold tabular-nums text-[#e5ebee]">
-            {latest == null ? "—" : <>{Math.round(latest)} <span className="text-xs font-normal">мс</span></>}
-          </dd>
-          {latestDay && <time dateTime={localDateKey(latestDay)}>{hrvDateLabel.format(latestDay)}</time>}
-        </div>
-      </dl>
+    <div className="grid min-w-0 content-start gap-1 rounded-lg bg-[#17252b] px-2.5 py-2" title={note}>
+      <dt className="flex items-center gap-1.5 text-[11px] font-medium leading-tight text-[#bbc8cd]">
+        {Icon && <Icon size={13} className={`shrink-0 ${iconClass}`} aria-hidden="true" />}
+        {label}
+      </dt>
+      <dd className="flex flex-wrap items-baseline gap-x-1 text-base font-bold leading-tight tabular-nums text-[#e5ebee]">
+        {value == null ? "—" : value.toFixed(digits)}
+        {value != null && <small className="text-[10px] font-medium text-[#a8b7be]">{unit}</small>}
+        {hasTrend && (
+          <span className={`text-xs ${changed ? (isGood ? "text-[#78d6a0]" : "text-[#f18491]") : "text-[#9aa8ad]"}`}
+            aria-label={changed ? (delta > 0 ? "выше среднего" : "ниже среднего") : "около среднего"}
+            title={`Среднее за 8 дней: ${average.toFixed(digits)} ${unit}`}>
+            {!changed ? "↔" : delta > 0 ? "↑" : "↓"}
+          </span>
+        )}
+      </dd>
     </div>
   );
 }
@@ -67,6 +71,9 @@ function RecentWellness({ wellness }) {
       .filter(({ date, value }) => dateKeys.has(date) && hasMetricValue(value))
       .map(({ date, value }) => [date, Number(value)])),
   ]));
+  const hrvHistory = new Map((wellness?.metrics?.hrv || [])
+    .filter(({ value }) => hasMetricValue(value))
+    .map(({ date, value }) => [date, Number(value)]));
   const trendRules = {
     sleep: { tolerance: 0.5, higherIsBetter: true },
     hrv: { tolerance: 5, higherIsBetter: true },
@@ -79,7 +86,6 @@ function RecentWellness({ wellness }) {
   return (
     <section className="mb-4" aria-label="Показатели здоровья за последние 8 дней">
       <h2 className="mb-2 text-[15px] font-bold">Здоровье · 8 последних дней</h2>
-      <HrvSnapshot days={days} values={valuesByMetric.hrv} />
       <div className="mb-2 h-[150px] w-full rounded-lg border border-[#3b4a50] bg-[#202c31] p-2" aria-label="График сна, ВЧП и пульса покоя за 8 дней">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={[...days].reverse().map((day) => {
@@ -129,41 +135,35 @@ function RecentWellness({ wellness }) {
         </ResponsiveContainer>
       </div>
       <div className="mb-2 flex flex-wrap gap-x-3 text-[10px] text-[color:var(--muted)]" aria-label="Легенда графика"><span className="text-[#b9a4ff]">▬ Сон, ч</span><span className="text-[#ef8490]">▬ ВЧП</span><span className="text-[#f3ad92]">━ ЧСС покоя</span></div>
-      <div className="grid gap-1.5 sm:max-[760px]:grid-cols-2">
+      <div className="grid gap-2 sm:max-[760px]:grid-cols-2">
         {days.map((day) => {
           const date = localDateKey(day);
-          const available = dailyMetrics.filter(({ key }) => valuesByMetric[key].has(date));
+          const available = dailyMetrics.filter(({ key }) => key !== "hrv" && valuesByMetric[key].has(date));
+          const nightlyHrv = valuesByMetric.hrv.get(date);
+          const hrvAverage = rollingHrv(day, hrvHistory);
+          const showHrv = nightlyHrv != null || hrvAverage != null;
+
           return (
-            <article key={date} className="rounded-lg border border-[#3b4a50] bg-[#202c31] px-2.5 py-2">
-              <time dateTime={date} className="block text-[12px] font-bold capitalize">{dayLabel.format(day)}</time>
-              {available.length > 0 ? (
-                <dl className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] tabular-nums">
-                  {available.map(({ key, label, unit, icon: Icon, iconClass, digits }) => {
-                    const value = valuesByMetric[key].get(date);
-                    const rule = trendRules[key];
-                    const average = averages[key];
-                    const delta = rule && average != null ? value - average : 0;
-                    const changed = rule && Math.abs(delta) >= rule.tolerance;
-                    const isGood = rule && (rule.higherIsBetter ? delta > 0 : delta < 0);
-                    return (
-                      <div key={key} className="flex items-center gap-1" title={label}>
-                        <dt className="flex items-center gap-1 text-[color:var(--muted)]">
-                          {Icon && <Icon size={12} className={`shrink-0 ${iconClass}`} aria-hidden="true" />}
-                          <span className={key === "hrv" ? "text-[10px] font-semibold text-[#ef8490]" : "sr-only"}>{label}</span>
-                        </dt>
-                        <dd className="m-0 flex items-center gap-0.5 text-[#e5ebee]">
-                          {value.toFixed(digits)}
-                          <small className={key === "hrv" ? "sr-only" : "ml-0.5 text-[10px] text-[color:var(--muted)]"}>{unit}</small>
-                          {rule && average != null && <span className={changed ? (isGood ? "ml-0.5 text-[#78d6a0]" : "ml-0.5 text-[#f18491]") : "ml-0.5 text-[#9aa8ad]"} aria-label={changed ? (isGood ? "лучше среднего" : "хуже среднего") : "около среднего"} title={`Среднее за 8 дней: ${average.toFixed(digits)} ${unit}; порог ±${rule.tolerance} ${unit}`}>
-                            {!changed ? "↔" : delta > 0 ? "↑" : "↓"}
-                          </span>}
-                        </dd>
-                      </div>
-                    );
-                  })}
+            <article key={date} className="rounded-xl border border-[#3b4a50] bg-[#202c31] p-2.5">
+              <time dateTime={date} className="mb-2 block text-sm font-bold capitalize">{dayLabel.format(day)}</time>
+              {available.length || showHrv ? (
+                <dl className="grid grid-cols-2 gap-1.5">
+                  {showHrv && <>
+                    <DayMetric label="ВЧП за ночь" icon={HeartPulse} iconClass="text-[#ef8490]"
+                      value={nightlyHrv} unit="мс" rule={trendRules.hrv} average={averages.hrv} />
+                    <DayMetric label="ВЧП за 7 дней" icon={HeartPulse} iconClass="text-[#ef8490]"
+                      value={hrvAverage?.value} unit="мс"
+                      note={hrvAverage ? `Есть замеры за ${hrvAverage.count} из 7 дней` : undefined} />
+                  </>}
+                  {available.map((metric) => (
+                    <DayMetric key={metric.key} label={metric.label} icon={metric.icon}
+                      iconClass={metric.iconClass} value={valuesByMetric[metric.key].get(date)}
+                      unit={metric.unit} digits={metric.digits}
+                      rule={trendRules[metric.key]} average={averages[metric.key]} />
+                  ))}
                 </dl>
               ) : (
-                <p className="mt-1 text-[11px] text-[color:var(--muted)]">Нет данных</p>
+                <p className="text-xs text-[color:var(--muted)]">Нет данных</p>
               )}
             </article>
           );
