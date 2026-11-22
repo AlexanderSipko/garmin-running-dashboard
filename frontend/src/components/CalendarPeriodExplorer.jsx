@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Activity,
   ChevronDown,
@@ -25,6 +25,7 @@ const monthShortNames = Array.from({ length: 12 }, (_, month) =>
 );
 
 function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, coachEnabled, syncedAt, wellness, planRevision }) {
+  const detailCache = useRef(new Map()).current;
   const [yearsOpen, setYearsOpen] = useState(false);
   const availableYears = useMemo(() => {
     const years = new Set(activities.map((activity) => getActivityDate(activity).getFullYear()));
@@ -570,7 +571,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
         {selection.type === "day" && (
           <>
             {(publicDemo || dayRuns.length !== 1) && <DaySummary activities={dayRuns} date={periodStart} />}
-            {!publicDemo && <ActivityDetail date={periodStart} activities={dayRuns} />}
+            {!publicDemo && <ActivityDetail date={periodStart} activities={dayRuns} detailCache={detailCache} />}
           </>
         )}
 

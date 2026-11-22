@@ -4,9 +4,7 @@ import { Clock3, Footprints, Gauge, Heart, Route } from "lucide-react";
 import { fmtDate, fmtDuration, fmtPace } from "../lib/format";
 import ActivityTrackCharts from "./ActivityTrackCharts";
 
-const activityDetailCache = new Map();
-
-function ActivityDetail({ date, activities }) {
+function ActivityDetail({ date, activities, detailCache }) {
   return (
     <section className="activity-detail pt-[15px] px-0 pb-0 mt-[14px] [border-top:1px_solid_var(--border)]">
       <div className="activity-detail-heading flex items-center justify-between gap-[14px] [&_h3]:mt-1 mx-0 mb-3 [&_h3]:[font:600_14px_Manrope,_sans-serif] [&_h3]:capitalize">
@@ -24,7 +22,7 @@ function ActivityDetail({ date, activities }) {
 
       {activities.length ? (
         activities.map((activity, index) => (
-          <ActivitySummary activity={activity} key={activity.id || index} />
+          <ActivitySummary activity={activity} detailCache={detailCache} key={activity.id || index} />
         ))
       ) : (
         <p className="rest-day-message mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">В этот день тренировок нет.</p>
@@ -33,7 +31,7 @@ function ActivityDetail({ date, activities }) {
   );
 }
 
-function ActivitySummary({ activity }) {
+function ActivitySummary({ activity, detailCache }) {
   const distanceKm = Number(activity.distance_meters || 0) / 1000;
   const durationSeconds = Number(
     activity.moving_duration_seconds || activity.duration_seconds || 0
@@ -42,7 +40,7 @@ function ActivitySummary({ activity }) {
   const activityType = String(activity.type || "").toLowerCase();
   const isRun = /(run|running|trail)/.test(activityType);
   const canLoadDetails = /^\d+$/.test(activityId) && isRun;
-  const [detail, setDetail] = useState(() => activityDetailCache.get(activityId) ?? null);
+  const [detail, setDetail] = useState(() => detailCache.get(activityId) ?? null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
 
@@ -64,13 +62,14 @@ function ActivitySummary({ activity }) {
       .then((result) => {
         if (!active) return;
         const cleanDetail = {
+          description: typeof result.description === "string" ? result.description : "",
           splits: Array.isArray(result.splits) ? result.splits : [],
           points: Array.isArray(result.points) ? result.points : [],
           sampleCount: Number(result.sample_count || 0),
           trackAvailable: Boolean(result.track_available),
           trackMessage: result.track_message || "",
         };
-        activityDetailCache.set(activityId, cleanDetail);
+        detailCache.set(activityId, cleanDetail);
         setDetail(cleanDetail);
       })
       .catch((error) => {
@@ -83,7 +82,7 @@ function ActivitySummary({ activity }) {
     return () => {
       active = false;
     };
-  }, [activityId, canLoadDetails, detail]);
+  }, [activityId, canLoadDetails, detail, detailCache]);
 
   const splits = detail?.splits || [];
 
@@ -120,6 +119,12 @@ function ActivitySummary({ activity }) {
       </div>
       {detailLoading && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">Загружаю подробную запись тренировки из Garmin…</p>}
       {detailError && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{detailError}</p>}
+      {detail?.description && (
+        <section aria-label="Описание из Garmin" className="mt-3 rounded-xl border border-[#34424a] bg-[#202a30] p-3">
+          <h5 className="mb-1 text-xs font-semibold text-[#aebbc0]">Описание из Garmin</h5>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{detail.description}</p>
+        </section>
+      )}
       {detail && <ActivityTrackCharts points={detail.points} />}
       {detail?.trackMessage && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{detail.trackMessage}</p>}
       {splits.length > 0 && <SplitList splits={splits} />}

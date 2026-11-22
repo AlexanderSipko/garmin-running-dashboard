@@ -294,6 +294,10 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
     ) as client:
         activity = client.get_activity(activity_id)
         splits = _split_rows(activity) if isinstance(activity, dict) else []
+        description = activity.get("description") if isinstance(activity, dict) else None
+        if not isinstance(description, str) and isinstance(activity, dict):
+            nested = activity.get("activity")
+            description = nested.get("description") if isinstance(nested, dict) else None
         try:
             file_bytes = client.download_activity(activity_id)
             points, sample_count = _fit_track_rows(file_bytes)
@@ -303,6 +307,7 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
             track_message = "Garmin не вернул исходный FIT-файл этой тренировки."
 
     return {
+        "description": description.strip() if isinstance(description, str) else None,
         "splits": splits,
         "points": points,
         "sample_count": sample_count,
