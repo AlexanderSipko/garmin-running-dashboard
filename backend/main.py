@@ -459,6 +459,13 @@ def analyze_period(
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
+    try:
+        database.ensure_ready()
+        with database.transaction() as connection:
+            connection.execute("SELECT 1")
+    except Exception as exc:
+        logger.error("Database health check failed: %s", type(exc).__name__)
+        raise HTTPException(503, "База данных недоступна. Проверь DATABASE_URL.") from None
     return {"status": "ok"}
 
 

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import sqlite3
+import threading
 from contextlib import contextmanager, closing
 from pathlib import Path
 from typing import Any, Callable
@@ -14,14 +16,13 @@ class Database:
         self.url = url
         self.sqlite_path = sqlite_path
         self.is_postgres = url.startswith(("postgres://", "postgresql://"))
-        if url and not self.is_postgres:
-            raise ValueError("DATABASE_URL must be a PostgreSQL URL")
-        self._initialize()
+        self._ready = False
+        self._init_lock = threading.Lock()
 
     def connect(self):
         if self.is_postgres:
             import psycopg
-            return psycopg.connect(self.url)
+            return psycopg.connect(self.url, connect_timeout=5)
         self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.sqlite_path, timeout=30)
         connection.execute("PRAGMA foreign_keys=ON")
@@ -29,11 +30,29 @@ class Database:
 
     @contextmanager
     def transaction(self):
+        self.ensure_ready()
+        with self._raw_transaction() as connection:
+            yield connection
+
+    @contextmanager
+    def _raw_transaction(self):
         with closing(self.connect()) as connection, connection:
             yield connection
 
+    def ensure_ready(self) -> None:
+        if self._ready:
+            return
+        with self._init_lock:
+            if not self._ready:
+                self._initialize()
+                self._ready = True
+
     def _initialize(self) -> None:
-        with self.transaction() as connection:
+        if (self.url and not self.is_postgres) or (os.environ.get("VERCEL") and not self.is_postgres):
+            raise ValueError("PostgreSQL DATABASE_URL is required")
+        with self._raw_transaction() as connection:
+            if self.is_postgres:
+                connection.execute("SELECT pg_advisory_xact_lock(629438001)")
             connection.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL)")
             connection.execute("CREATE TABLE IF NOT EXISTS user_settings (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, garmin_key TEXT, ai_key TEXT)")
             connection.execute("CREATE TABLE IF NOT EXISTS user_data (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, payload TEXT NOT NULL DEFAULT '{}')")
