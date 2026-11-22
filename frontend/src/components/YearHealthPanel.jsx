@@ -1,5 +1,6 @@
 import { Heart, HeartPulse, Scale, Moon, Wind } from "lucide-react";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { hasMetricValue, hasWellnessForDay, localDateKey } from "../lib/wellnessDates";
 
 const metrics = [
   { key: "sleep", label: "Сон", unit: "ч", icon: Moon, color: "sleep", iconClass: "text-[#b9a4ff]", digits: 1 },
@@ -13,19 +14,11 @@ const dailyMetrics = [
   { key: "resting_hr", label: "Пульс покоя", unit: "уд/мин", icon: Heart, iconClass: "text-[#f3ad92]", digits: 0 },
   { key: "vo2_max", label: "VO₂ макс.", unit: "мл/кг/мин", digits: 1 },
 ];
-const localDateKey = (value) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 const dayLabel = new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "short" });
-
-function hasMetricValue(value) {
-  return value != null && value !== "" && Number.isFinite(Number(value));
-}
 
 function RecentWellness({ wellness }) {
   const today = new Date();
-  const todayKey = localDateKey(today);
-  const hasToday = dailyMetrics.some(({ key }) =>
-    wellness?.metrics?.[key]?.some(({ date, value }) => date === todayKey && hasMetricValue(value))
-  );
+  const hasToday = hasWellnessForDay(wellness, localDateKey(today));
   const firstDayOffset = hasToday ? 0 : 1;
   const days = Array.from({ length: 8 }, (_, index) =>
     new Date(today.getFullYear(), today.getMonth(), today.getDate() - firstDayOffset - index)

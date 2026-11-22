@@ -420,6 +420,23 @@ def dashboard(days: int = Query(default=90, ge=30, le=3650)) -> dict[str, Any]:
     return account_dashboard(days)
 
 
+@app.get("/api/dashboard/wellness")
+def dashboard_wellness_day(day: date) -> dict[str, Any]:
+    store = read_store()
+    day_key = day.isoformat()
+    metrics = {}
+    for name in ("sleep", "stress", "hrv", "weight", "resting_hr", "vo2_max"):
+        values = store.get("wellness_metrics", {}).get(name, [])
+        points = [
+            {"date": day_key, "value": row["value"]}
+            for row in values
+            if row.get("date") == day_key and row.get("value") is not None
+        ]
+        if points:
+            metrics[name] = points
+    return {"metrics": metrics, "synced_at": store.get("wellness_synced_at")}
+
+
 @app.get("/api/activities/{activity_id}/splits")
 async def activity_splits(activity_id: int) -> dict[str, Any]:
     if activity_id <= 0:
@@ -462,14 +479,28 @@ async def activity_detail(activity_id: int) -> dict[str, Any]:
     return {"activity_id": activity_id, **detail}
 
 
+def incremental_sync_start(
+    today: date, earliest: date, covered_through: str | None, synced_at: str | None,
+) -> date:
+    last_day = parse_date(covered_through) or parse_date(synced_at)
+    if last_day is None or last_day > today:
+        return earliest
+    return max(earliest, last_day)
+
+
 @app.post("/api/sync")
 async def sync_activities(days: int = Query(default=365, ge=30, le=3650)) -> dict[str, Any]:
     garmin_key = decrypt(database.keys(account_id.get())[0])
     if not garmin_key:
         raise HTTPException(status_code=409, detail="Добавь ключ Garmin в настройках аккаунта.")
     today = date.today()
+    initial_store = read_store()
+    earliest = today - timedelta(days=days - 1)
+    activities_start = incremental_sync_start(
+        today, earliest, initial_store.get("activities_synced_through"), initial_store.get("synced_at"),
+    )
     try:
-        activities = await garmin_call("activities", today - timedelta(days=days - 1), today, key=garmin_key)
+        activities = await garmin_call("activities", activities_start, today, key=garmin_key)
     except Exception as exc:
         reason = str(exc).lower()
         if "rate limit" in reason or "429" in reason:
@@ -479,19 +510,13 @@ async def sync_activities(days: int = Query(default=365, ge=30, le=3650)) -> dic
         else:
             message = "Не удалось получить данные Garmin. Проверь подключение и попробуй позже."
         raise HTTPException(status_code=502, detail=message) from None
-    initial_store = read_store()
-    old_metrics = initial_store.get("wellness_metrics", {})
-    has_wellness_history = any(
-        old_metrics.get(name)
-        for name in ("sleep", "stress", "hrv", "vo2_max", "resting_hr", "weight")
-    )
     wellness_result: dict[str, Any] | None = None
     wellness_error = False
     try:
-        # Garmin exposes only short HRV windows; bootstrap two years, then refresh the latest 28 days.
-        wellness_start = max(
-            today - timedelta(days=27 if has_wellness_history else 730),
-            today - timedelta(days=days - 1),
+        wellness_earliest = max(earliest, today - timedelta(days=730))
+        wellness_start = incremental_sync_start(
+            today, wellness_earliest,
+            initial_store.get("wellness_synced_through"), initial_store.get("wellness_synced_at"),
         )
         wellness_result = await garmin_call("wellness_metrics", wellness_start, today, key=garmin_key)
     except Exception:
@@ -506,6 +531,7 @@ async def sync_activities(days: int = Query(default=365, ge=30, le=3650)) -> dic
             store.get("activities", []), activities
         )
         store["synced_at"] = sync_time
+        store["activities_synced_through"] = today.isoformat()
 
         if wellness_result is not None:
             current_metrics = store.get("wellness_metrics", {})
@@ -525,7 +551,9 @@ async def sync_activities(days: int = Query(default=365, ge=30, le=3650)) -> dic
                 merged_metrics[name] = [by_date[day] for day in sorted(by_date)]
             store["wellness_metrics"] = merged_metrics
             store["wellness_errors"] = wellness_result.get("errors", {})
-            store["wellness_synced_at"] = sync_time
+            if any(new_metrics.values()) or not wellness_result.get("errors"):
+                store["wellness_synced_at"] = sync_time
+                store["wellness_synced_through"] = today.isoformat()
         elif wellness_error:
             # Wellness is optional; keep the last successful records and timestamp.
             store["wellness_errors"] = {
