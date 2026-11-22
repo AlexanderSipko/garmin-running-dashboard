@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Activity,
   ChevronDown,
@@ -8,13 +8,14 @@ import {
   HeartPulse,
   Watch,
 } from "lucide-react";
-import { fmtPace, fmtDuration } from "../lib/format";
+import { fmtPace } from "../lib/format";
+import { dayKey, getActivityCategory, getActivityDate, summarizeCalendar } from "../lib/calendarAnalytics";
+import DaySummary from "./DaySummary";
+import MonthDayCalendar from "./MonthDayCalendar";
 import ActivityDetail from "./ActivityDetail";
 import RunningCoachPanel from "./RunningCoachPanel";
 import YearHealthPanel from "./YearHealthPanel";
 import PeriodTrends from "./PeriodTrends";
-
-const weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
 const monthNames = Array.from({ length: 12 }, (_, month) =>
   new Date(2024, month, 1).toLocaleDateString("ru-RU", { month: "long" })
@@ -23,51 +24,7 @@ const monthShortNames = Array.from({ length: 12 }, (_, month) =>
   new Date(2024, month, 1).toLocaleDateString("ru-RU", { month: "short" }).replace(".", "")
 );
 
-function getActivityDate(activity) {
-  const [year, month, day] = String(activity.start_time).slice(0, 10).split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function getActivityCategory(activity) {
-  const type = String(activity.type || "").toLowerCase().replace(/[^a-zа-я0-9]+/g, "_");
-  if (/(strength|weight_training|gym|силов|зал)/.test(type)) return "strength";
-  if (/(^|_)(run|running|virtual_run|trail_running)(_|$)/.test(type)) return "running";
-  return null;
-}
-
-function dayKey(date) {
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-}
-
-function DaySummary({ activities, date }) {
-  const distance = activities.reduce((sum, item) => sum + Number(item.distance_meters || 0), 0) / 1000;
-  const seconds = activities.reduce((sum, item) => sum + Number(item.moving_duration_seconds || item.duration_seconds || 0), 0);
-  const timed = activities.filter((item) => Number(item.avg_hr_bpm) > 0);
-  const hrSeconds = timed.reduce((sum, item) => sum + Number(item.avg_hr_bpm) * Number(item.moving_duration_seconds || item.duration_seconds || 0), 0);
-  const hrTime = timed.reduce((sum, item) => sum + Number(item.moving_duration_seconds || item.duration_seconds || 0), 0);
-  const metrics = [
-    ["ДИСТАНЦИЯ", `${distance.toFixed(1)} км`],
-    ["ВРЕМЯ", fmtDuration(seconds)],
-    ["СРЕДНИЙ ТЕМП", fmtPace(distance ? seconds / distance : 0)],
-    ["СРЕДНИЙ ПУЛЬС", hrTime ? `${Math.round(hrSeconds / hrTime)} bpm` : "—"],
-  ];
-  return (
-    <section className="day-summary min-w-0 pt-3 border-t border-[#34424a]" aria-label="Метрики выбранного дня">
-      <h2 className="m-0 mb-2 text-[15px] font-semibold text-[#e0e8eb]">Итоги дня · {date.toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}</h2>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {metrics.map(([label, value]) => (
-          <article className="min-w-0 rounded-[10px] border border-[#34424a] bg-[linear-gradient(145deg,_#202a30,_#192228_80%)] p-3" key={label}>
-            <small className="block text-[10px] text-[#aab6bb]">{label}</small>
-            <b className="mt-1 block text-[18px] text-[#e5ebee]">{activities.length ? value : "—"}</b>
-          </article>
-        ))}
-      </div>
-      <p className="mt-2 mb-0 text-[11px] text-[#8f9ea5]">{activities.length} пробежек · суммарно {distance.toFixed(1)} км</p>
-    </section>
-  );
-}
-
-function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, coachEnabled, syncedAt, wellness }) {
+function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, coachEnabled, syncedAt, wellness, planRevision }) {
   const [yearsOpen, setYearsOpen] = useState(false);
   const availableYears = useMemo(() => {
     const years = new Set(activities.map((activity) => getActivityDate(activity).getFullYear()));
@@ -75,98 +32,10 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
     return [...years].sort((first, second) => second - first);
   }, [activities]);
 
-  const daySummaries = useMemo(() => {
-    const summaries = new Map();
-    activities.forEach((activity) => {
-      const date = getActivityDate(activity);
-      const key = dayKey(date);
-      const summary = summaries.get(key) || {
-        runKm: 0,
-        runs: 0,
-        runSeconds: 0,
-        hrSeconds: 0,
-        hrWeight: 0,
-        strength: 0,
-      };
-      const category = getActivityCategory(activity);
-      if (category === "running") {
-        const distanceKm = Number(activity.distance_meters || 0) / 1000;
-        const duration = Number(activity.moving_duration_seconds || activity.duration_seconds || 0);
-        const heartRate = Number(activity.avg_hr_bpm || 0);
-        summary.runKm += distanceKm;
-        summary.runs += 1;
-        summary.runSeconds += duration;
-        if (heartRate > 0) {
-          summary.hrSeconds += heartRate * duration;
-          summary.hrWeight += duration;
-        }
-      }
-      if (category === "strength") summary.strength += 1;
-      summaries.set(key, summary);
-    });
-    return summaries;
-  }, [activities]);
-
-  const monthSummaries = useMemo(() => {
-    const summaries = new Map();
-    activities.forEach((activity) => {
-      const date = getActivityDate(activity);
-      const key = `${date.getFullYear()}-${date.getMonth()}`;
-      const summary = summaries.get(key) || {
-        runKm: 0,
-        runSeconds: 0,
-        hrSeconds: 0,
-        hrWeight: 0,
-        strengthCount: 0,
-      };
-      const category = getActivityCategory(activity);
-      if (category === "running") {
-        const distanceKm = Number(activity.distance_meters || 0) / 1000;
-        const duration = Number(activity.moving_duration_seconds || activity.duration_seconds || 0);
-        const heartRate = Number(activity.avg_hr_bpm || 0);
-        summary.runKm += distanceKm;
-        summary.runSeconds += duration;
-        if (heartRate > 0) {
-          summary.hrSeconds += heartRate * duration;
-          summary.hrWeight += duration;
-        }
-      }
-      if (category === "strength") summary.strengthCount += 1;
-      summaries.set(key, summary);
-    });
-    return summaries;
-  }, [activities]);
-
-  const yearSummaries = useMemo(() => {
-    const summaries = new Map();
-    activities.forEach((activity) => {
-      const year = getActivityDate(activity).getFullYear();
-      const summary = summaries.get(year) || {
-        runKm: 0,
-        runSeconds: 0,
-        hrSeconds: 0,
-        hrWeight: 0,
-        runCount: 0,
-        strengthCount: 0,
-      };
-      const category = getActivityCategory(activity);
-      if (category === "running") {
-        const distanceKm = Number(activity.distance_meters || 0) / 1000;
-        const durationSeconds = Number(activity.moving_duration_seconds || activity.duration_seconds || 0);
-        const heartRate = Number(activity.avg_hr_bpm || 0);
-        summary.runKm += distanceKm;
-        summary.runSeconds += durationSeconds;
-        summary.runCount += 1;
-        if (heartRate > 0) {
-          summary.hrSeconds += heartRate * durationSeconds;
-          summary.hrWeight += durationSeconds;
-        }
-      }
-      if (category === "strength") summary.strengthCount += 1;
-      summaries.set(year, summary);
-    });
-    return summaries;
-  }, [activities]);
+  const { daySummaries, monthSummaries, yearSummaries } = useMemo(
+    () => summarizeCalendar(activities),
+    [activities]
+  );
 
   const [expandedYear, setExpandedYear] = useState(() => new Date().getFullYear());
   const [expandedMonth, setExpandedMonth] = useState(null);
@@ -232,11 +101,11 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
       const daysInMonth = new Date(chartYear, month + 1, 0).getDate();
       return Array.from({ length: daysInMonth }, (_, index) => {
         const day = index + 1;
-        const summary = daySummaries.get(`${chartYear}-${month}-${day}`);
+        const summary = daySummaries.get(dayKey(new Date(chartYear, month, day)));
         return { label: String(day), runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,
           pace: summary?.runKm ? summary.runSeconds / summary.runKm : null,
           avgHr: summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
-          strengthCount: summary?.strength || 0 };
+          strengthCount: summary?.strengthCount || 0 };
       });
     }
 
@@ -264,23 +133,14 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
       ? `${monthNames[selection.month]} ${selection.year}`
       : `${selection.day} ${monthNames[selection.month]} ${selection.year}`;
 
-  const calendarMonth = expandedMonth?.month;
-  const calendarOffset = calendarMonth == null
-    ? 0
-    : (new Date(expandedYear, calendarMonth, 1).getDay() + 6) % 7;
-  const calendarDayCount = calendarMonth == null
-    ? 0
-    : new Date(expandedYear, calendarMonth + 1, 0).getDate();
-  const calendarWeeks = useMemo(() => {
-    if (calendarMonth == null) return [];
-    const first = new Date(expandedYear, calendarMonth, 1);
-    const mondayOffset = (first.getDay() + 6) % 7;
-    const start = new Date(expandedYear, calendarMonth, 1 - mondayOffset);
-    const count = Math.ceil((mondayOffset + calendarDayCount) / 7);
-    return Array.from({ length: count }, (_, week) => ({
-      days: Array.from({ length: 7 }, (__, day) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + week * 7 + day)),
-    }));
-  }, [calendarDayCount, calendarMonth, expandedYear]);
+  function selectDay({ year, month, day }) {
+    if (year !== expandedYear || month !== expandedMonth?.month) {
+      setExpandedMonth({ year, month });
+      setExpandedYear(year);
+    }
+    setSelection({ type: "day", year, month, day });
+  }
+
   const dayRuns = selection.type === "day"
     ? periodActivities.filter((activity) => getActivityCategory(activity) === "running")
     : [];
@@ -462,6 +322,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
           </div>
         </header>
         {coachEnabled && <RunningCoachPanel
+          key={planRevision}
           period={selection.type}
           periodStart={periodStart}
           periodEnd={periodEnd}
@@ -563,12 +424,12 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
             data={chartData}
             periodLabel={chartPeriodLabel}
             showRunning={showRunning}
-            showStrength
+            showStrength={showStrength}
             periodSummary={{
               distanceKm: totalRunKm,
               pace: averagePace,
               heartRate: averageHr,
-              strengthCount: periodActivities.filter((activity) => getActivityCategory(activity) === "strength").length,
+              strengthCount,
             }}
           />
         )}
@@ -671,55 +532,15 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
         )}
 
         {expandedMonth?.year === expandedYear && (
-          <div className="period-month-days mt-3 mx-0 mb-1">
-            <div className="period-month-days-heading mb-2 text-[#e0e8eb] text-[16px] font-extrabold capitalize">
-              {monthNames[expandedMonth.month]} {expandedYear}
-            </div>
-            <div className="period-day-list grid grid-cols-[repeat(7,_minmax(0,_1fr))] gap-1 m-0">
-              {weekdays.map((label, index) => (
-                <span key={label} className={`text-center text-[11px] font-bold ${index >= 5 ? "text-[#f3ad92]" : "text-[color:var(--soft)]"}`}>{label}</span>
-              ))}
-              {calendarWeeks.map((week, weekIndex) => {
-                const weekRuns = week.days.map((day) => daySummaries.get(`${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`)).filter(Boolean);
-                const weekKm = weekRuns.reduce((sum, item) => sum + item.runKm, 0);
-                const weekSeconds = weekRuns.reduce((sum, item) => sum + item.runSeconds, 0);
-                const weekHrWeight = weekRuns.reduce((sum, item) => sum + item.hrWeight, 0);
-                const weekHrSeconds = weekRuns.reduce((sum, item) => sum + item.hrSeconds, 0);
-                return <Fragment key={weekIndex}>
-                  <div className="col-span-7 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-[#ffffff0d] bg-[#ffffff06] px-2 py-1 text-xs tabular-nums max-[480px]:gap-x-2 font-semibold text-[color:var(--soft)]">
-                    <span>{weekKm.toFixed(1)} км</span>
-                    <span className="inline-flex items-center gap-1"><Gauge size={12} aria-label="Темп" />{weekKm ? `${fmtPace(weekSeconds / weekKm)}/км` : "—"}</span>
-                    <span className="inline-flex items-center gap-1"><HeartPulse size={12} aria-label="Пульс" />{weekHrWeight ? `${Math.round(weekHrSeconds / weekHrWeight)} уд/мин` : "—"}</span>
-                  </div>
-                  {weekdays.map((label, weekday) => {
-                    const date = week.days[weekday];
-                    const day = date.getDate();
-                    const month = date.getMonth();
-                    const year = date.getFullYear();
-                    const outsideMonth = month !== calendarMonth;
-                    const monthName = monthNames[month];
-                    const daily = daySummaries.get(`${year}-${month}-${day}`) || { runKm: 0, runs: 0, strength: 0 };
-                    const hasRun = selectedTypes.includes("running") && daily.runs > 0;
-                    const hasStrength = selectedTypes.includes("strength") && daily.strength > 0;
-                    const daySelected = selection.type === "day" && selection.year === expandedYear && selection.month === month && selection.day === day;
-                    return (
-                      <button
-                        className={`period-cube period-day-cube flex min-w-0 min-h-[54px] flex-col items-center justify-center p-[4px] border border-[color:var(--border)] rounded-[9px] bg-[color:var(--panel)] text-[color:var(--text)] text-[14px] font-semibold text-center capitalize shadow-[0_3px_9px_#00000018] [&.has-run]:border-[#e5aa62] [&.has-run]:[background:linear-gradient(145deg,_#362923,_#1d262b_82%)] [&.is-selected]:border-[color:var(--accent)] [&.is-selected]:bg-[color:var(--accent-soft)] [&_small]:mt-[2px] [&_small]:text-[#e5aa62] [&_small]:text-[10px] [&_small]:leading-[1.1] ${outsideMonth ? "opacity-35" : ""}${hasRun ? " has-run" : ""}${daySelected ? " is-selected" : ""}`}
-                        type="button"
-                        key={day}
-                        aria-label={`${day} ${monthName} ${expandedYear}${hasRun ? `, бег ${daily.runKm.toFixed(1)} км` : ""}${hasStrength ? ", силовая тренировка" : ""}`}
-                        onClick={() => { if (outsideMonth) { setExpandedMonth({ year, month }); setExpandedYear(year); } setSelection({ type: "day", year, month, day }); }}
-                      >
-                        <span className={weekday >= 5 ? "text-[#f3ad92]" : undefined}>{day}</span>
-                        {hasRun && <><small>{daily.runKm.toFixed(1)} км</small><i aria-hidden="true" style={{ width: `${Math.min(12, 4 + daily.runKm * 0.2)}px`, height: `${Math.min(12, 4 + daily.runKm * 0.2)}px` }} className="mt-1 rounded-full bg-[#e5aa62] opacity-80" /></>}
-                        {hasStrength && <i aria-hidden="true" />}
-                      </button>
-                    );
-                  })}
-                </Fragment>;
-              })}
-            </div>
-          </div>
+          <MonthDayCalendar
+            expandedYear={expandedYear}
+            calendarMonth={expandedMonth.month}
+            monthNames={monthNames}
+            daySummaries={daySummaries}
+            selectedTypes={selectedTypes}
+            selection={selection}
+            onSelectDay={selectDay}
+          />
         )}
 
         {selection.type === "day" && (

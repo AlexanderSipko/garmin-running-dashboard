@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 
 from settings import settings
+from runner_plan import RunnerPlan
 
 COOKIE = "garmin_session"
 SESSION_TTL = timedelta(days=7)
@@ -109,6 +110,24 @@ def account_routes(database, verify_key):
         user_id, email = current(request)
         garmin, ai = database.keys(user_id)
         return {"id": user_id, "email": email, "garmin": bool(garmin), "ai": bool(ai)}
+
+    @router.get("/plan", response_model=RunnerPlan)
+    def get_plan(request: Request):
+        user_id, _ = current(request)
+        return database.read(user_id).get("runner_plan", {})
+
+    @router.put("/plan", response_model=RunnerPlan)
+    def save_plan(body: RunnerPlan, request: Request):
+        user_id, _ = current(request)
+        plan = body.model_dump(mode="json")
+
+        def update(store):
+            if plan != store.get("runner_plan"):
+                store["runner_plan"] = plan
+                store.pop("coach_daily", None)
+
+        database.update(user_id, update)
+        return body
 
     @router.put("/keys/{provider}")
     def save(provider: Literal["garmin", "ai"], body: KeyInput, request: Request):

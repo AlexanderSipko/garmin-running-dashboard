@@ -1,21 +1,23 @@
-# Frontend structure
+# Структура фронтенда
 
-The frontend is a small React app organized by responsibility. The entry point only mounts the app and loads global styles.
+`src/main.jsx` монтирует React и подключает стили. `src/app/App.jsx`
+управляет аккаунтом и выбором между демо, личным дашбордом и инструкцией подключения.
 
-```text
-src/
-├── app/             application state and page navigation
-├── components/      UI shared by dashboard variants
-├── dashboards/      the three selectable dashboard layouts
-├── calculator/      pace calculator page and its UI
-├── hooks/           Garmin sync and running coach API state
-├── data/            preview data and dashboard choices
-├── lib/             formatting and calculations without UI
-└── styles/          Tailwind entrypoint and shared theme tokens
-```
+| Папка | Что внутри |
+| --- | --- |
+| `components/` | Календарь, графики, детали тренировки, здоровье, консультации и настройки аккаунта. |
+| `hooks/` | Загрузка и синхронизация Garmin, запросы консультанту и состояние диалога. |
+| `data/` | Генератор вымышленных тренировок и показателей здоровья для демо. |
+| `lib/` | Подсчёты календаря, обработка трека и форматирование. |
+| `calculator/` | Калькулятор темпа, временно скрытый из интерфейса. |
+| `styles/` | Tailwind и базовые стили. |
 
-The backend's `coach.py` prepares coach prompts and delegates requests to the GigaChat REST client in `backend/providers/gigachat.py`. The client exchanges the project authorization key for a short-lived access token and keeps that token on the backend. The frontend never receives either key or token.
+`CalendarPeriodExplorer` управляет выбранным годом, месяцем, днём и фильтрами.
+`calendarAnalytics.js` сводит тренировки по этим периодам.
+`MonthDayCalendar` показывает недели и карточки дней, а `DaySummary`
+выводит итоги выбранного дня.
 
-Use Tailwind utilities and responsive variants in the components. Put shared theme tokens and base Tailwind directives in `styles/index.css`. Keep credential variables in the backend configuration.
-
-Keep calculations independent from React components where practical. Add a component to `components/` when more than one page uses it; keep page-specific pieces beside their page. The app uses function components and hooks.
+На backend `dashboard_data.py` собирает ответ дашборда и объединяет тренировки
+при синхронизации. `coach.py` формирует промпты и передаёт запросы клиенту
+в `backend/providers/gigachat.py`. Ключи обрабатывает backend.
+На Vercel `api/backend.js` проксирует запросы приложения к FastAPI.

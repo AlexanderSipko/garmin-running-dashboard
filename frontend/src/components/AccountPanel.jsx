@@ -1,3 +1,4 @@
+import RunnerPlanForm from "./RunnerPlanForm";
 import { useEffect, useRef, useState } from "react";
 import { ChevronUp, Footprints, KeyRound, LogIn, LogOut, Settings2, UserPlus, X } from "lucide-react";
 
@@ -70,7 +71,7 @@ function KeySetting({ provider, label, configured, onChange }) {
   );
 }
 
-export default function AccountPanel({ account, onChange }) {
+export default function AccountPanel({ account, onChange, onPlanSaved }) {
   const [mode, setMode] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -180,6 +181,7 @@ export default function AccountPanel({ account, onChange }) {
           onChange={(garmin) => onChange({ ...account, garmin })} />
         <KeySetting provider="ai" label="GigaChat Authorization Key (необязательно)" configured={account.ai}
           onChange={(ai) => onChange({ ...account, ai })} />
+        <RunnerPlanForm key={account.id} request={accountRequest} onSaved={onPlanSaved} />
       </section>}
       {error && !authOpen && <p className="mt-2 text-rose-300" role="alert">{error}</p>}
     </header>
