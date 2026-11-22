@@ -1,56 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MapPin } from "lucide-react";
-
-const tileSize = 256;
-const mercatorLimit = 85.05112878;
-
-function project([latitude, longitude]) {
-  const lat = Math.max(-mercatorLimit, Math.min(latitude, mercatorLimit)) * Math.PI / 180;
-  return {
-    x: (longitude + 180) / 360,
-    y: (1 - Math.asinh(Math.tan(lat)) / Math.PI) / 2,
-  };
-}
-
-function fitRoute(route, width, height) {
-  if (width < 80 || height < 80) return null;
-
-  const projected = route.map(project);
-  const originX = projected[0].x;
-  const points = projected.map(({ x, y }) => ({ x: x - Math.round(x - originX), y }));
-  const minX = Math.min(...points.map((point) => point.x));
-  const maxX = Math.max(...points.map((point) => point.x));
-  const minY = Math.min(...points.map((point) => point.y));
-  const maxY = Math.max(...points.map((point) => point.y));
-  if (minX === maxX && minY === maxY) return null;
-
-  const fitWidth = (width - 56) / Math.max(maxX - minX, 1e-9);
-  const fitHeight = (height - 56) / Math.max(maxY - minY, 1e-9);
-  const zoom = Math.max(0, Math.min(17, Math.floor(Math.log2(Math.min(fitWidth, fitHeight) / tileSize))));
-  const tileCount = 2 ** zoom;
-  const worldSize = tileCount * tileSize;
-  const left = (minX + maxX) * worldSize / 2 - width / 2;
-  const top = (minY + maxY) * worldSize / 2 - height / 2;
-  const tiles = [];
-
-  for (let x = Math.floor(left / tileSize); x < Math.ceil((left + width) / tileSize); x += 1) {
-    for (let y = Math.floor(top / tileSize); y < Math.ceil((top + height) / tileSize); y += 1) {
-      if (y < 0 || y >= tileCount) continue;
-      const wrappedX = ((x % tileCount) + tileCount) % tileCount;
-      tiles.push({
-        key: `${x}:${y}`,
-        url: `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${y}.png`,
-        left: x * tileSize - left,
-        top: y * tileSize - top,
-      });
-    }
-  }
-
-  return {
-    tiles,
-    points: points.map(({ x, y }) => ({ x: x * worldSize - left, y: y * worldSize - top })),
-  };
-}
+import { Focus, Layers2, MapPin, Minus, Plus } from "lucide-react";
+import { fitRoute, mapFrame, mapScale, maxZoom, minZoom, panBy, projectRoute, tileSize, zoomAt } from "../lib/routeMap";
 
 function drawRoute(context, points) {
   context.lineJoin = "round";
@@ -76,13 +26,34 @@ function drawRoute(context, points) {
   }
 }
 
+const controlClass = "grid size-11 place-items-center bg-[#18252c] text-[#e5ebee] hover:bg-[#2b3b42] focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-[#ffc17f] disabled:opacity-40";
+
+function MarkerKey({ color, children }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`size-2 rounded-full ${color}`} aria-hidden="true" />{children}
+    </span>
+  );
+}
+
 export default function ActivityRouteMap({ route }) {
   const container = useRef(null);
   const canvas = useRef(null);
+  const pointers = useRef(new Map());
+  const pinchDistance = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [customView, setCustomView] = useState(null);
+  const [dragging, setDragging] = useState(false);
   const [showStreets, setShowStreets] = useState(false);
   const { width, height } = dimensions;
-  const map = useMemo(() => fitRoute(route, width, height), [route, width, height]);
+  const projected = useMemo(() => projectRoute(route), [route]);
+  const fitted = useMemo(() => fitRoute(projected, width, height), [projected, width, height]);
+  const view = customView || fitted;
+  const frame = useMemo(
+    () => view ? mapFrame(view, projected, width, height, showStreets) : null,
+    [view, projected, width, height, showStreets]
+  );
+  const scaleBar = view && mapScale(view);
 
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => {
@@ -93,7 +64,7 @@ export default function ActivityRouteMap({ route }) {
   }, []);
 
   useEffect(() => {
-    if (!map) return;
+    if (!frame) return;
     const surface = canvas.current;
     const scale = window.devicePixelRatio || 1;
     surface.width = Math.round(width * scale);
@@ -101,31 +72,120 @@ export default function ActivityRouteMap({ route }) {
     const context = surface.getContext("2d");
     if (!context) return;
     context.setTransform(scale, 0, 0, scale, 0, 0);
-    drawRoute(context, map.points);
-  }, [map, width, height]);
+    drawRoute(context, frame.points);
+  }, [frame, width, height]);
+
+  function changeZoom(step, offsetX = 0, offsetY = 0) {
+    if (view) setCustomView((current) => zoomAt(current || fitted, step, offsetX, offsetY));
+  }
+
+  function startPointer(event) {
+    if (!view || event.button !== 0 || pointers.current.size >= 2) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.current.size === 2) {
+      const [first, second] = [...pointers.current.values()];
+      pinchDistance.current = Math.hypot(first.x - second.x, first.y - second.y);
+    }
+    setDragging(true);
+  }
+
+  function movePointer(event) {
+    const previous = pointers.current.get(event.pointerId);
+    if (!previous) return;
+
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.current.size === 2) {
+      const [first, second] = [...pointers.current.values()];
+      const distance = Math.hypot(first.x - second.x, first.y - second.y);
+      const reference = pinchDistance.current;
+      if (!reference || distance <= 0) return;
+      const ratio = distance / reference;
+      if (ratio > 1.45 || ratio < 0.69) {
+        const bounds = event.currentTarget.getBoundingClientRect();
+        changeZoom(ratio > 1 ? 1 : -1,
+          (first.x + second.x) / 2 - bounds.left - width / 2,
+          (first.y + second.y) / 2 - bounds.top - height / 2);
+        pinchDistance.current = distance;
+      }
+      return;
+    }
+
+    const dx = event.clientX - previous.x;
+    const dy = event.clientY - previous.y;
+    setCustomView((current) => panBy(current || fitted, dx, dy));
+  }
+
+  function endPointer(event) {
+    pointers.current.delete(event.pointerId);
+    pinchDistance.current = null;
+    if (!pointers.current.size) setDragging(false);
+  }
+
+  function handleKey(event) {
+    if (!view || event.target !== event.currentTarget) return;
+    const directions = { ArrowLeft: [45, 0], ArrowRight: [-45, 0], ArrowUp: [0, 45], ArrowDown: [0, -45] };
+    if (directions[event.key]) {
+      event.preventDefault();
+      setCustomView((current) => panBy(current || fitted, ...directions[event.key]));
+    } else if (["+", "=", "-", "0"].includes(event.key)) {
+      event.preventDefault();
+      if (event.key === "0") setCustomView(null);
+      else changeZoom(event.key === "-" ? -1 : 1);
+    }
+  }
 
   return (
-    <section className="mt-4 rounded-xl border border-[#34424a] bg-[#202a30] p-3" aria-label="Маршрут тренировки">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h5 className="flex items-center gap-1.5 text-sm font-semibold"><MapPin size={16} aria-hidden="true" /> Маршрут</h5>
-        <button type="button" aria-pressed={showStreets} disabled={!map}
+    <section className="mt-4 rounded-2xl border border-[#3b4b52] bg-linear-to-br from-[#27373e] to-[#1a242a] p-3 sm:p-4" aria-label="Маршрут тренировки">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h5 className="flex items-center gap-2 text-base font-bold">
+          <MapPin size={18} className="text-[#ffc17f]" aria-hidden="true" /> Маршрут
+        </h5>
+        <button type="button" aria-pressed={showStreets} disabled={!view}
           onClick={() => setShowStreets(!showStreets)}
-          className="min-h-9 rounded-lg border border-[#46545b] px-2.5 text-xs font-semibold hover:bg-[#26363d] disabled:opacity-50">
-          {showStreets ? "Скрыть улицы" : "Показать улицы"}
+          className={`inline-flex min-h-10 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold disabled:opacity-50 ${showStreets ? "border-[#9d754f] bg-[#413426] text-[#ffc17f]" : "border-[#46545b] text-[#d3dce0] hover:bg-[#26363d]"}`}>
+          <Layers2 size={15} aria-hidden="true" /> {showStreets ? "Улицы включены" : "Показать улицы"}
         </button>
       </div>
-      <div ref={container}
-        className="relative h-[220px] overflow-hidden rounded-lg bg-[#17252b] [background-image:linear-gradient(#ffffff0d_1px,transparent_1px),linear-gradient(90deg,#ffffff0d_1px,transparent_1px)] [background-size:24px_24px]">
-        {showStreets && map?.tiles.map((tile) => (
-          <img key={tile.key} src={tile.url} alt="" aria-hidden="true" width={tileSize} height={tileSize}
-            className="absolute max-w-none opacity-80" style={{ left: tile.left, top: tile.top }} />
-        ))}
-        <canvas ref={canvas} className="pointer-events-none absolute inset-0 h-full w-full"
-          role="img" aria-label="GPS-маршрут. Зелёная точка — старт, красная — финиш." />
-        {showStreets && map && (
-          <a className="absolute bottom-0 right-0 rounded-tl bg-[#17252b] px-1.5 py-0.5 text-[10px] text-white underline"
+
+      <div className="relative overflow-hidden rounded-xl border border-[#3b4b52]">
+        <div ref={container} tabIndex={view ? 0 : undefined} role="region"
+          aria-label="Карта маршрута. Используй стрелки для перемещения, плюс и минус для масштаба."
+          onPointerDown={startPointer} onPointerMove={movePointer} onPointerUp={endPointer}
+          onPointerCancel={endPointer} onLostPointerCapture={endPointer} onKeyDown={handleKey}
+          className={`relative h-[250px] touch-none select-none overflow-hidden bg-[#16262d] [background-image:radial-gradient(#ffffff1c_1px,transparent_1px)] [background-size:20px_20px] sm:h-[310px] ${dragging ? "cursor-grabbing" : "cursor-grab"}`}>
+          {frame?.tiles.map((tile) => (
+            <img key={tile.key} src={tile.url} alt="" draggable={false} width={tileSize} height={tileSize}
+              className="pointer-events-none absolute max-w-none opacity-85" style={{ left: tile.left, top: tile.top }} />
+          ))}
+          <canvas ref={canvas} className="pointer-events-none absolute inset-0 h-full w-full"
+            role="img" aria-label="GPS-маршрут. Зелёная точка — старт, красная — финиш." />
+        </div>
+
+        <div className="absolute right-2 top-2 grid overflow-hidden rounded-xl border border-[#4a5b62] shadow-lg" aria-label="Масштаб карты">
+          <button type="button" className={controlClass} aria-label="Приблизить" disabled={!view || view.zoom >= maxZoom}
+            onClick={() => changeZoom(1)}><Plus size={18} /></button>
+          <button type="button" className={`${controlClass} border-t border-[#4a5b62]`} aria-label="Отдалить"
+            disabled={!view || view.zoom <= minZoom} onClick={() => changeZoom(-1)}><Minus size={18} /></button>
+          <button type="button" className={`${controlClass} border-t border-[#4a5b62]`} aria-label="Показать весь маршрут"
+            title="Показать весь маршрут" disabled={!customView} onClick={() => setCustomView(null)}><Focus size={18} /></button>
+        </div>
+
+        {scaleBar && (
+          <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-[#18252c]/90 px-2 py-1 text-[10px] font-semibold text-white" aria-hidden="true">
+            {scaleBar.value}
+            <div className="h-1.5 border-x border-b border-white" style={{ width: scaleBar.width }} />
+          </div>
+        )}
+        {showStreets && frame && (
+          <a className="absolute bottom-0 right-0 rounded-tl bg-[#17252b]/95 px-1.5 py-0.5 text-[10px] text-white underline"
             href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a>
         )}
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#bbc8cd]">
+        <MarkerKey color="bg-[#82dba6]">Старт</MarkerKey>
+        <MarkerKey color="bg-[#f88b83]">Финиш</MarkerKey>
       </div>
     </section>
   );
