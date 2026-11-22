@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import {
   Activity,
+  ChevronDown,
   Dumbbell,
   Footprints,
   Gauge,
@@ -66,7 +67,8 @@ function DaySummary({ activities, date }) {
   );
 }
 
-function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, coachEnabled, syncedAt, usesDemoData, wellness }) {
+function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, coachEnabled, syncedAt, wellness }) {
+  const [yearsOpen, setYearsOpen] = useState(false);
   const availableYears = useMemo(() => {
     const years = new Set(activities.map((activity) => getActivityDate(activity).getFullYear()));
     years.add(new Date().getFullYear());
@@ -308,7 +310,13 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
         </button>}
         {error && <div className="period-sync-error mt-[-2px] mx-0 mb-[9px] text-[color:#ff9a91] text-[12px]">{error}</div>}
 
-        <div className="period-explorer-years grid gap-2 max-[760px]:grid-flow-col max-[760px]:auto-cols-[minmax(145px,42vw)] max-[760px]:overflow-x-auto max-[760px]:snap-x max-[760px]:[&>*]:snap-start">
+        <button type="button" aria-expanded={yearsOpen} aria-controls="calendar-years"
+          onClick={() => setYearsOpen(!yearsOpen)}
+          className="mb-2 hidden min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-[#415157] px-3 text-sm font-semibold max-[760px]:flex">
+          <span>Годы · {expandedYear}</span>
+          <ChevronDown size={16} className={yearsOpen ? "rotate-180" : undefined} />
+        </button>
+        <div id="calendar-years" className={`period-explorer-years grid gap-2 max-[760px]:grid-flow-col max-[760px]:auto-cols-[minmax(145px,42vw)] max-[760px]:overflow-x-auto max-[760px]:snap-x max-[760px]:[&>*]:snap-start ${yearsOpen ? "" : "max-[760px]:hidden"}`}>
           {availableYears.map((year) => {
             const yearOpen = expandedYear === year;
             const summary = yearSummaries.get(year) || {
@@ -452,6 +460,13 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
             ))}
           </div>
         </header>
+        {coachEnabled && <RunningCoachPanel
+          period={selection.type}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          label={selectionLabel}
+          syncedAt={syncedAt}
+        />}
 
         <div className="period-summary-metrics grid grid-cols-[repeat(auto-fit,_minmax(112px,_1fr))] gap-[9px] max-[420px]:grid-cols-[repeat(2,_minmax(0,_1fr))]">
           <article className={[
@@ -670,8 +685,10 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
                 const weekHrWeight = weekRuns.reduce((sum, item) => sum + item.hrWeight, 0);
                 const weekHrSeconds = weekRuns.reduce((sum, item) => sum + item.hrSeconds, 0);
                 return <Fragment key={weekIndex}>
-                  <div className="col-span-7 mt-1 flex flex-wrap gap-x-3 rounded-md border border-[#ffffff0d] bg-[#ffffff06] px-2 py-1.5 text-[12px] font-semibold text-[color:var(--soft)]">
-                    <span>{weekKm.toFixed(1)} км</span><span>Темп {weekKm ? `${fmtPace(weekSeconds / weekKm)} /км` : "—"}</span><span>Пульс {weekHrWeight ? `${Math.round(weekHrSeconds / weekHrWeight)} уд/мин` : "—"}</span>
+                  <div className="col-span-7 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-[#ffffff0d] bg-[#ffffff06] px-2 py-1 text-xs tabular-nums max-[480px]:gap-x-2 font-semibold text-[color:var(--soft)]">
+                    <span>{weekKm.toFixed(1)} км</span>
+                    <span className="inline-flex items-center gap-1"><Gauge size={12} aria-label="Темп" />{weekKm ? `${fmtPace(weekSeconds / weekKm)}/км` : "—"}</span>
+                    <span className="inline-flex items-center gap-1"><HeartPulse size={12} aria-label="Пульс" />{weekHrWeight ? `${Math.round(weekHrSeconds / weekHrWeight)} уд/мин` : "—"}</span>
                   </div>
                   {weekdays.map((label, weekday) => {
                     const date = week.days[weekday];
@@ -711,19 +728,9 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, c
           </>
         )}
 
-        {coachEnabled && <details className="mt-3 rounded-xl border border-[#34424a] bg-[linear-gradient(145deg,_#202a30,_#192228_80%)] p-3">
-          <summary className="cursor-pointer text-[15px] font-semibold text-[#e5ebee]">Открыть чат с тренером</summary>
-          <RunningCoachPanel period={selection.type} periodStart={periodStart} periodEnd={periodEnd} syncedAt={syncedAt} hasRealData={!usesDemoData} />
-        </details>}
-
       </section>
 
-      <YearHealthPanel
-        wellness={wellness}
-        period={selectionLabel}
-        periodStart={periodStart}
-        periodEnd={periodEnd}
-      />
+      <YearHealthPanel wellness={wellness} />
     </main>
   );
 }

@@ -258,6 +258,7 @@ async def protect_dashboard(request: Request, call_next):
 
 
 class CoachPeriodRequest(BaseModel):
+    daily: bool = False
     start_date: date
     end_date: date
     previous_start_date: date | None = None
@@ -307,6 +308,54 @@ def wellness_between(start: date, end: date) -> dict[str, Any]:
     return result
 
 
+def daily_coach_context(day: date) -> dict[str, Any]:
+    store = read_store()
+    week_start = monday_of(day)
+    previous_start = week_start - timedelta(days=7)
+    previous_end = week_start - timedelta(days=1)
+    baseline_start = day - timedelta(days=21)
+    snapshot = {key: [] for key in ("sleep", "hrv", "resting_hr")}
+    for key in snapshot:
+        snapshot[key] = [
+            row for row in store.get("wellness_metrics", {}).get(key, [])
+            if baseline_start.isoformat() <= str(row.get("date", ""))[:10] < day.isoformat()
+            and row.get("value") is not None
+        ]
+
+    def load(start: date, end: date) -> dict[str, Any]:
+        rows = [
+            item for item in store.get("activities", [])
+            if start <= (parse_date(item.get("start_time")) or date.min) <= end
+        ]
+        runs = [row for row in rows if "run" in str(row.get("type", "")).lower()]
+        return {
+            "sessions": len(rows),
+            "runs": len(runs),
+            "run_km": round(sum(float(row.get("distance_meters") or 0) for row in runs) / 1000, 1),
+        }
+
+    return {
+        "last_sync_at": store.get("synced_at"),
+        "today_recorded_activities": [
+            {"name": str(item.get("name") or "")[:100], "type": item.get("type")}
+            for item in store.get("activities", [])
+            if parse_date(item.get("start_time")) == day
+        ][:8],
+        "current_week_through_today": load(week_start, day),
+        "previous_week_same_days": load(previous_start, day - timedelta(days=7)),
+        "previous_full_week": load(previous_start, previous_end),
+        "personal_baseline_previous_21_days": {
+            key: {
+                "days": len(rows),
+                "mean": round(sum(float(row["value"]) for row in rows) / len(rows), 1) if rows else None,
+                "latest_date": max((str(row["date"])[:10] for row in rows), default=None),
+                "latest_value": max(rows, key=lambda row: str(row["date"]))["value"] if rows else None,
+            }
+            for key, rows in snapshot.items()
+        },
+    }
+
+
 def analyze_period(
     start: date,
     end: date,
@@ -314,7 +363,10 @@ def analyze_period(
     previous_end: date | None = None,
     question: str | None = None,
     conversation: list[dict[str, str]] | None = None,
+    daily: bool = False,
 ) -> dict[str, Any]:
+    if daily and start != end:
+        raise HTTPException(422, "Сводка дня доступна для одной даты.")
     if end < start:
         raise HTTPException(status_code=422, detail="Конец периода раньше его начала.")
     running_coach = personal_coach()
@@ -343,6 +395,7 @@ def analyze_period(
             activity_summary=period_activity_summary(start, end),
             question=question,
             conversation=conversation,
+            daily_context=daily_coach_context(start) if daily else None,
         )
     except GigaChatError as exc:
         status_code = exc.status_code
@@ -405,14 +458,30 @@ def coach_status() -> dict[str, Any]:
     }
 
 
+@app.get("/api/coach/daily")
+def saved_daily_summary(day: date):
+    if not database.keys(account_id.get())[1]:
+        raise HTTPException(409, "Добавь ключ GigaChat в настройках аккаунта.")
+    return read_store().get("coach_daily", {}).get(day.isoformat())
+
+
 @app.post("/api/coach/summary")
 def coach_summary(request: CoachPeriodRequest) -> dict[str, Any]:
-    return analyze_period(
+    result = analyze_period(
         request.start_date,
         request.end_date,
         request.previous_start_date,
         request.previous_end_date,
+        daily=request.daily,
     )
+    if request.daily:
+        def save_summary(store: dict[str, Any]) -> None:
+            entries = store.get("coach_daily", {})
+            entries[request.start_date.isoformat()] = result
+            store["coach_daily"] = dict(sorted(entries.items(), reverse=True)[:7])
+
+        update_store(save_summary)
+    return result
 
 
 @app.post("/api/coach/chat")
@@ -424,6 +493,7 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
         request.previous_end_date,
         question=request.question,
         conversation=[turn.model_dump() for turn in request.conversation],
+        daily=request.daily,
     )
 
 

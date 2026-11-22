@@ -22,7 +22,6 @@ function Dashboard({ demo, account }) {
         publicDemo={dashboard.publicDemo}
         coachEnabled={Boolean(account?.ai)}
         syncedAt={dashboard.syncedAt}
-        usesDemoData={dashboard.usesDemoData}
         wellness={dashboard.wellness}
       />
     </main>

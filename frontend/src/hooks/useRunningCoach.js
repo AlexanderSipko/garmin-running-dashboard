@@ -75,7 +75,7 @@ function useRunningCoach({
   periodStart,
   periodEnd,
   syncedAt,
-  enabled,
+  daily = false,
 }) {
   const cache = useRef({ summaryCache: new Map(), summaryInFlight: new Map(), summaryErrors: new Map() }).current;
   const { summaryCache, summaryErrors } = cache;
@@ -88,8 +88,8 @@ function useRunningCoach({
   const [error, setError] = useState("");
 
   const requestPeriod = useMemo(
-    () => buildRequestPeriod(period, periodStart, periodEnd),
-    [period, periodStart, periodEnd]
+    () => ({ ...buildRequestPeriod(period, periodStart, periodEnd), daily }),
+    [period, periodStart, periodEnd, daily]
   );
   const cacheKey = `${period}:${requestPeriod.start_date}:${
     requestPeriod.end_date
@@ -108,6 +108,22 @@ function useRunningCoach({
     setSummary(summaryCache.get(cacheKey)?.answer || "");
     setSummaryUsage(summaryCache.get(cacheKey)?.usage || null);
   }, [cacheKey]);
+
+  useEffect(() => {
+    if (!daily || !status?.configured) return;
+    const controller = new AbortController();
+    const requestDate = encodeURIComponent(requestPeriod.start_date);
+    fetch(`/api/coach/daily?day=${requestDate}`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((saved) => {
+        if (saved && !controller.signal.aborted) {
+          setSummary((current) => current || saved.answer);
+          setSummaryUsage((current) => current || saved.usage);
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [daily, requestPeriod.start_date, status?.configured, syncedAt]);
 
   const refreshSummary = async () => {
     summaryCache.delete(cacheKey);
@@ -129,10 +145,10 @@ function useRunningCoach({
     const cleanQuestion = question.trim();
     if (!cleanQuestion || sending) return;
 
-    const conversation = messages.map(({ role, content }) => ({
-      role,
-      content,
-    }));
+    const conversation = [
+      ...(summary ? [{ role: "assistant", content: summary.slice(0, 1200) }] : []),
+      ...messages.slice(-3).map(({ role, content }) => ({ role, content: content.slice(0, 1200) })),
+    ];
     setMessages((current) => [
       ...current,
       { role: "user", content: cleanQuestion, usage: null },

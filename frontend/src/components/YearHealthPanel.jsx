@@ -141,7 +141,7 @@ function RecentWellness({ wellness }) {
   );
 }
 
-function YearHealthPanel({ wellness, period, periodStart, periodEnd }) {
+function YearHealthPanel({ wellness }) {
   return (
     <aside className={[
       "year-health-panel min-w-0 self-start min-[761px]:sticky min-[761px]:top-0 min-[761px]:max-h-dvh min-[761px]:overflow-y-auto py-[14px] px-[12px]",
