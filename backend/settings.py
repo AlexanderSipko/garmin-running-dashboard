@@ -56,7 +56,12 @@ settings = Settings(
         _value("GARMIN_BEARER_TOKEN_CACHE", "/app/data/garmin-bearer-token.json")
     ),
     garmin_data_file=Path(_value("GARMIN_DATA_FILE", "data/dashboard.json")),
-    database_url=_value("DATABASE_URL"),
+    database_url=(
+        _value("DATABASE_URL")
+        or _value("GARMIN_DATABASE_URL")
+        or _value("GARMIN_POSTGRES_URL")
+        or _value("GARMIN_DATABASE_URL_UNPOOLED")
+    ),
     app_origin=_value("APP_ORIGIN"),
     secrets_encryption_key=_value("SECRETS_ENCRYPTION_KEY"),
     garmin_api_timeout_seconds=25.0,

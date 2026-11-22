@@ -62,7 +62,10 @@ Authorization Key можно добавить и проверить отдель
 
 1. Импортируй этот же репозиторий во второй проект Vercel с Root Directory
    `backend` и пресетом FastAPI. Подключи к нему Neon PostgreSQL.
-2. В Production переменных backend укажи `DATABASE_URL`, отдельный ключ
+2. В Production переменных backend проверь строку подключения.
+   Если Neon добавил `GARMIN_DATABASE_URL`, `GARMIN_POSTGRES_URL` или
+   `GARMIN_DATABASE_URL_UNPOOLED`, можно использовать её автоматически.
+   Ручной `DATABASE_URL` имеет приоритет. Затем добавь отдельный ключ
    Fernet в `SECRETS_ENCRYPTION_KEY` и полный HTTPS адрес фронтенда
    в `APP_ORIGIN` без слеша на конце. Если GigaChat требует сертификаты,
    настрой его CA bundle в backend.
