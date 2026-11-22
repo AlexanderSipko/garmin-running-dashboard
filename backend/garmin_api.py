@@ -94,7 +94,9 @@ def _split_rows(activity: dict[str, Any]) -> list[dict[str, Any]]:
     return cleaned
 
 
-def _fit_track_rows(archive_bytes: bytes, max_points: int = 1500) -> tuple[list[dict[str, Any]], int]:
+def _fit_track_rows(
+    archive_bytes: bytes, max_points: int = 1500,
+) -> tuple[list[dict[str, Any]], int, list[tuple[float, float]]]:
     """Decode GPS-like record samples from Garmin's zipped original FIT file."""
     with zipfile.ZipFile(BytesIO(archive_bytes)) as archive:
         fit_member = next(
@@ -102,19 +104,31 @@ def _fit_track_rows(archive_bytes: bytes, max_points: int = 1500) -> tuple[list[
             None,
         )
         if fit_member is None:
-            return [], 0
+            return [], 0, []
         if fit_member.file_size > 50 * 1024 * 1024:
             raise ValueError("Garmin FIT file is unexpectedly large")
         fit_bytes = archive.read(fit_member)
 
     fit_file = FitFile(BytesIO(fit_bytes))
     rows: list[dict[str, Any]] = []
+    route: list[tuple[float, float]] = []
     first_timestamp = None
     previous_timestamp = None
     previous_distance = 0.0
 
     for message in fit_file.get_messages("record"):
         fields = message.get_values()
+        latitude = fields.get("position_lat")
+        longitude = fields.get("position_long")
+        if latitude is not None and longitude is not None:
+            # The default fitparse processor leaves GPS coordinates in FIT semicircles.
+            degrees_per_semicircle = 180 / (2 ** 31)
+            lat = latitude * degrees_per_semicircle
+            lon = longitude * degrees_per_semicircle
+            if -90 <= lat <= 90 and -180 <= lon <= 180:
+                point = (round(lat, 6), round(lon, 6))
+                if not route or point != route[-1]:
+                    route.append(point)
         timestamp = fields.get("timestamp")
         distance = fields.get("distance")
         speed = fields.get("enhanced_speed") or fields.get("speed")
@@ -162,7 +176,11 @@ def _fit_track_rows(archive_bytes: bytes, max_points: int = 1500) -> tuple[list[
         if sampled[-1] is not rows[-1]:
             sampled.append(rows[-1])
         rows = sampled
-    return rows, total_count
+    max_route_points = 700
+    if len(route) > max_route_points:
+        last = len(route) - 1
+        route = [route[round(index * last / (max_route_points - 1))] for index in range(max_route_points)]
+    return rows, total_count, route
 
 
 def _records(payload: Any) -> list[dict[str, Any]]:
@@ -309,10 +327,10 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
             refreshed_activity["description"] = note.strip() if isinstance(note, str) else None
         try:
             file_bytes = client.download_activity(activity_id)
-            points, sample_count = _fit_track_rows(file_bytes)
+            points, sample_count, route = _fit_track_rows(file_bytes)
             track_message = "" if points else "В исходном файле Garmin нет точек записи FIT."
         except Exception:
-            points, sample_count = [], 0
+            points, sample_count, route = [], 0, []
             track_message = "Garmin не вернул исходный FIT-файл этой тренировки."
 
     return {
@@ -320,6 +338,7 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         "activity": refreshed_activity,
         "splits": splits,
         "points": points,
+        "route": route,
         "sample_count": sample_count,
         "track_available": bool(points),
         "track_message": track_message,

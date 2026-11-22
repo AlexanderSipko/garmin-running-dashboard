@@ -2,6 +2,7 @@ import SectionEyebrow from "./SectionEyebrow";
 import { useEffect, useState } from "react";
 import { Clock3, Footprints, Gauge, Heart, RefreshCw, Route } from "lucide-react";
 import { fmtDate, fmtDuration, fmtPace } from "../lib/format";
+import ActivityRouteMap from "./ActivityRouteMap";
 import ActivityTrackCharts from "./ActivityTrackCharts";
 
 function ActivityDetail({ date, activities, detailCache, onActivityUpdated }) {
@@ -87,6 +88,7 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
           description: typeof result.description === "string" ? result.description : "",
           splits: Array.isArray(result.splits) ? result.splits : [],
           points: Array.isArray(result.points) ? result.points : [],
+          route: Array.isArray(result.route) ? result.route : [],
           sampleCount: Number(result.sample_count || 0),
           trackAvailable: Boolean(result.track_available),
           trackMessage: result.track_message || "",
@@ -162,6 +164,7 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
       {detail?.saved && <ActivityTrackCharts points={detail.points} />}
       {detail?.trackMessage && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{detail.trackMessage}</p>}
       {splits.length > 0 && <SplitList splits={splits} />}
+      {detail?.route?.length > 1 && <ActivityRouteMap route={detail.route} />}
       {detail?.saved && !splits.length && !detail.trackAvailable && !detail.trackMessage && (
         <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">Для этой тренировки Garmin не вернул сплиты или точки записи.</p>
       )}
