@@ -22,6 +22,7 @@ from store import Database
 
 database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
+COACH_CONTEXT_VERSION = 2
 
 
 account_id: ContextVar[str] = ContextVar("account_id")
@@ -149,27 +150,53 @@ class CoachChatRequest(CoachPeriodRequest):
     conversation: list[CoachChatTurn] = Field(default_factory=list, max_length=8)
 
 
-def activities_between(start: date, end: date) -> list[dict[str, Any]]:
+def activities_between(rows: list[dict[str, Any]], start: date, end: date) -> list[dict[str, Any]]:
     return [
-        item
-        for item in read_store().get("activities", [])
-        if start <= (parse_date(item.get("start_time")) or date.min) <= end
-        and "run" in str(item.get("type") or "").lower()
-    ]
-
-
-def period_activity_summary(start: date, end: date) -> dict[str, Any]:
-    rows = [
-        item for item in read_store().get("activities", [])
+        item for item in rows
         if start <= (parse_date(item.get("start_time")) or date.min) <= end
     ]
-    strength = [item for item in rows if any(tag in str(item.get("type") or "").lower() for tag in ("strength", "gym", "weight_training", "силов", "зал"))]
-    run_count = len(activities_between(start, end))
-    return {"run_count": run_count, "strength_count": len(strength), "activity_count": len(rows)}
 
 
-def wellness_between(start: date, end: date) -> dict[str, Any]:
-    metrics = read_store().get("wellness_metrics", {})
+def is_strength(activity: dict[str, Any]) -> bool:
+    activity_type = str(activity.get("type") or "").lower().replace("-", "_").replace(" ", "_")
+    return any(tag in activity_type for tag in ("strength", "gym", "weight_training", "силов", "зал"))
+
+
+def is_running(activity: dict[str, Any]) -> bool:
+    return "run" in str(activity.get("type") or "").lower() and not is_strength(activity)
+
+
+def strength_summary(rows: list[dict[str, Any]], *, include_details: bool = False) -> dict[str, Any]:
+    sessions = [item for item in rows if is_strength(item)]
+    durations = {}
+    for index, item in enumerate(sessions):
+        seconds = float(item.get("duration_seconds") or item.get("moving_duration_seconds") or 0)
+        if seconds > 0:
+            durations[index] = seconds
+
+    summary = {
+        "sessions": len(sessions),
+        "recorded_minutes": round(sum(durations.values()) / 60, 1) if durations else None,
+        "sessions_with_duration": len(durations),
+    }
+    if include_details and sessions:
+        latest = sorted(
+            enumerate(sessions), key=lambda entry: str(entry[1].get("start_time") or ""), reverse=True
+        )[:5]
+        summary["recent_sessions"] = [
+            {
+                "date": str(item.get("start_time"))[:10],
+                "name": str(item.get("name") or "")[:80],
+                "type": item.get("type"),
+                "duration_minutes": round(durations[index] / 60, 1) if index in durations else None,
+                "average_heart_rate": item.get("avg_hr_bpm") or None,
+            }
+            for index, item in latest
+        ]
+    return summary
+
+
+def wellness_between(metrics: dict, start: date, end: date) -> dict[str, Any]:
     result = {}
     for name in ("sleep", "stress", "hrv", "weight", "resting_hr", "vo2_max"):
         rows = [row for row in metrics.get(name, []) if start.isoformat() <= str(row.get("date", ""))[:10] <= end.isoformat()]
@@ -182,8 +209,7 @@ def wellness_between(start: date, end: date) -> dict[str, Any]:
     return result
 
 
-def daily_coach_context(day: date) -> dict[str, Any]:
-    store = read_store()
+def daily_coach_context(store: dict[str, Any], day: date) -> dict[str, Any]:
     week_start = monday_of(day)
     previous_start = week_start - timedelta(days=7)
     previous_end = week_start - timedelta(days=1)
@@ -197,14 +223,12 @@ def daily_coach_context(day: date) -> dict[str, Any]:
         ]
 
     def load(start: date, end: date) -> dict[str, Any]:
-        rows = [
-            item for item in store.get("activities", [])
-            if start <= (parse_date(item.get("start_time")) or date.min) <= end
-        ]
-        runs = [row for row in rows if "run" in str(row.get("type", "")).lower()]
+        rows = activities_between(store.get("activities", []), start, end)
+        runs = [row for row in rows if is_running(row)]
         return {
             "sessions": len(rows),
             "runs": len(runs),
+            "strength_sessions": sum(is_strength(row) for row in rows),
             "run_km": round(sum(float(row.get("distance_meters") or 0) for row in runs) / 1000, 1),
         }
 
@@ -253,24 +277,28 @@ def analyze_period(
             detail="Добавь ключ GigaChat в настройках аккаунта.",
         )
 
+    store = read_store()
+    rows = store.get("activities", [])
+    selected = activities_between(rows, start, end)
+    previous = activities_between(rows, previous_start, previous_end) if previous_start and previous_end else None
+
     try:
         result = running_coach.analyze(
-            activities=activities_between(start, end),
+            activities=[row for row in selected if is_running(row)],
             start_date=start,
             end_date=end,
-            previous_activities=(
-                activities_between(previous_start, previous_end)
-                if previous_start and previous_end
-                else None
-            ),
+            previous_activities=[row for row in previous if is_running(row)] if previous is not None else None,
             previous_start_date=previous_start,
             previous_end_date=previous_end,
-            wellness=wellness_between(start, end),
-            activity_summary=period_activity_summary(start, end),
+            wellness=wellness_between(store.get("wellness_metrics", {}), start, end),
+            activity_summary={
+                "strength": strength_summary(selected, include_details=True),
+                "previous_strength": strength_summary(previous) if previous is not None else None,
+            },
             question=question,
             conversation=conversation,
-            daily_context=daily_coach_context(start) if daily else None,
-            runner_plan=plan_context(read_store().get("runner_plan"), start if daily else date.today()),
+            daily_context=daily_coach_context(store, start) if daily else None,
+            runner_plan=plan_context(store.get("runner_plan"), start if daily else date.today()),
         )
     except GigaChatError as exc:
         status_code = exc.status_code
@@ -337,7 +365,8 @@ def coach_status() -> dict[str, Any]:
 def saved_daily_summary(day: date):
     if not database.keys(account_id.get())[1]:
         raise HTTPException(409, "Добавь ключ GigaChat в настройках аккаунта.")
-    return read_store().get("coach_daily", {}).get(day.isoformat())
+    saved = read_store().get("coach_daily", {}).get(day.isoformat())
+    return saved if saved and saved.get("context_version") == COACH_CONTEXT_VERSION else None
 
 
 @app.post("/api/coach/summary")
@@ -355,7 +384,7 @@ def coach_summary(request: CoachPeriodRequest) -> dict[str, Any]:
             if store.get("runner_plan") != plan_before_request:
                 return
             entries = store.get("coach_daily", {})
-            entries[request.start_date.isoformat()] = result
+            entries[request.start_date.isoformat()] = {**result, "context_version": COACH_CONTEXT_VERSION}
             store["coach_daily"] = dict(sorted(entries.items(), reverse=True)[:7])
 
         update_store(save_summary)
