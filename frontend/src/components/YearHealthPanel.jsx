@@ -5,7 +5,7 @@ import { hasMetricValue, hasWellnessForDay, localDateKey } from "../lib/wellness
 const metrics = [
   { key: "sleep", label: "Сон", unit: "ч", icon: Moon, color: "sleep", iconClass: "text-[#b9a4ff]", digits: 1 },
   { key: "stress", label: "Стресс", unit: "уровень", icon: Wind, color: "stress", iconClass: "text-[#efa85f]", digits: 0 },
-  { key: "hrv", label: "ВСР", unit: "мс", icon: HeartPulse, color: "hrv", iconClass: "text-[#ef8490]", digits: 0 },
+  { key: "hrv", label: "ВЧП", unit: "мс", icon: HeartPulse, color: "hrv", iconClass: "text-[#ef8490]", digits: 0 },
   { key: "weight", label: "Вес", unit: "кг", icon: Scale, color: "weight", iconClass: "text-[#8bb7ed]", digits: 1 },
 ];
 
@@ -15,6 +15,43 @@ const dailyMetrics = [
   { key: "vo2_max", label: "VO₂ макс.", unit: "мл/кг/мин", digits: 1 },
 ];
 const dayLabel = new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "short" });
+
+const hrvDateLabel = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
+
+function HrvSnapshot({ days, values }) {
+  const week = days.slice(0, 7)
+    .map((day) => values.get(localDateKey(day)))
+    .filter((value) => value != null);
+  const latestDay = days.find((day) => values.has(localDateKey(day)));
+  const latest = latestDay ? values.get(localDateKey(latestDay)) : null;
+  const average = week.length
+    ? Math.round(week.reduce((sum, value) => sum + value, 0) / week.length)
+    : null;
+
+  return (
+    <div className="mb-2 rounded-lg border border-[#3b4a50] bg-[#202c31] px-3 py-2.5">
+      <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold text-[#ef8490]">
+        <HeartPulse size={14} aria-hidden="true" /> ВЧП
+      </h3>
+      <dl className="grid grid-cols-2 gap-3 text-[11px] text-[#b4bfc4]">
+        <div>
+          <dt>Среднее за 7 дней</dt>
+          <dd className="mt-0.5 text-xl font-bold tabular-nums text-[#e5ebee]">
+            {average == null ? "—" : <>{average} <span className="text-xs font-normal">мс</span></>}
+          </dd>
+          {week.length < 7 && <p>{week.length ? `Есть данные за ${week.length} из 7 дней` : "Нет измерений"}</p>}
+        </div>
+        <div>
+          <dt>Последняя ночь</dt>
+          <dd className="mt-0.5 text-xl font-bold tabular-nums text-[#e5ebee]">
+            {latest == null ? "—" : <>{Math.round(latest)} <span className="text-xs font-normal">мс</span></>}
+          </dd>
+          {latestDay && <time dateTime={localDateKey(latestDay)}>{hrvDateLabel.format(latestDay)}</time>}
+        </div>
+      </dl>
+    </div>
+  );
+}
 
 function RecentWellness({ wellness }) {
   const today = new Date();
@@ -42,7 +79,8 @@ function RecentWellness({ wellness }) {
   return (
     <section className="mb-4" aria-label="Показатели здоровья за последние 8 дней">
       <h2 className="mb-2 text-[15px] font-bold">Здоровье · 8 последних дней</h2>
-      <div className="mb-2 h-[150px] w-full rounded-lg border border-[#3b4a50] bg-[#202c31] p-2" aria-label="График сна, ВСР и пульса покоя за 8 дней">
+      <HrvSnapshot days={days} values={valuesByMetric.hrv} />
+      <div className="mb-2 h-[150px] w-full rounded-lg border border-[#3b4a50] bg-[#202c31] p-2" aria-label="График сна, ВЧП и пульса покоя за 8 дней">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={[...days].reverse().map((day) => {
             const date = localDateKey(day);
@@ -81,16 +119,16 @@ function RecentWellness({ wellness }) {
             <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
               <div className="rounded-md border border-[#46545b] bg-[#202a30f2] p-2 text-[11px] text-[#dce5e9]">
                 <b>{label}</b>
-                {payload.map(({ dataKey, value }) => <div key={dataKey}>{dataKey === "sleep" ? `Сон: ${Number(value).toFixed(1)} ч` : dataKey === "hrv" ? `ВСР: ${Math.round(value)} мс` : `Пульс покоя: ${Math.round(value)} уд/мин`}</div>)}
+                {payload.map(({ dataKey, value }) => <div key={dataKey}>{dataKey === "sleep" ? `Сон: ${Number(value).toFixed(1)} ч` : dataKey === "hrv" ? `ВЧП: ${Math.round(value)} мс` : `Пульс покоя: ${Math.round(value)} уд/мин`}</div>)}
               </div>
             ) : null} />
             <Area yAxisId="sleep" dataKey="sleep" name="Сон" type="monotone" stroke="#b9a4ff" strokeWidth={2} fill="url(#wellness-sleep-area)" connectNulls={false} isAnimationActive={false} />
-            <Area yAxisId="hrv" dataKey="hrv" name="ВСР" type="monotone" stroke="#ef8490" strokeWidth={2} fill="url(#wellness-hrv-area)" connectNulls={false} isAnimationActive={false} />
+            <Area yAxisId="hrv" dataKey="hrv" name="ВЧП" type="monotone" stroke="#ef8490" strokeWidth={2} fill="url(#wellness-hrv-area)" connectNulls={false} isAnimationActive={false} />
             <Line yAxisId="resting" dataKey="restingHr" name="ЧСС покоя" type="monotone" stroke="#f3ad92" strokeWidth={2} dot={{ r: 1.5, fill: "#f3ad92" }} connectNulls={false} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
-      <div className="mb-2 flex flex-wrap gap-x-3 text-[10px] text-[color:var(--muted)]" aria-label="Легенда графика"><span className="text-[#b9a4ff]">▬ Сон, ч</span><span className="text-[#ef8490]">▬ ВСР, мс</span><span className="text-[#f3ad92]">━ ЧСС покоя</span></div>
+      <div className="mb-2 flex flex-wrap gap-x-3 text-[10px] text-[color:var(--muted)]" aria-label="Легенда графика"><span className="text-[#b9a4ff]">▬ Сон, ч</span><span className="text-[#ef8490]">▬ ВЧП</span><span className="text-[#f3ad92]">━ ЧСС покоя</span></div>
       <div className="grid gap-1.5 sm:max-[760px]:grid-cols-2">
         {days.map((day) => {
           const date = localDateKey(day);
@@ -111,10 +149,11 @@ function RecentWellness({ wellness }) {
                       <div key={key} className="flex items-center gap-1" title={label}>
                         <dt className="flex items-center gap-1 text-[color:var(--muted)]">
                           {Icon && <Icon size={12} className={`shrink-0 ${iconClass}`} aria-hidden="true" />}
-                          <span className="sr-only">{label}</span>
+                          <span className={key === "hrv" ? "text-[10px] font-semibold text-[#ef8490]" : "sr-only"}>{label}</span>
                         </dt>
                         <dd className="m-0 flex items-center gap-0.5 text-[#e5ebee]">
-                          {value.toFixed(digits)}<small className="ml-0.5 text-[10px] text-[color:var(--muted)]">{unit}</small>
+                          {value.toFixed(digits)}
+                          <small className={key === "hrv" ? "sr-only" : "ml-0.5 text-[10px] text-[color:var(--muted)]"}>{unit}</small>
                           {rule && average != null && <span className={changed ? (isGood ? "ml-0.5 text-[#78d6a0]" : "ml-0.5 text-[#f18491]") : "ml-0.5 text-[#9aa8ad]"} aria-label={changed ? (isGood ? "лучше среднего" : "хуже среднего") : "около среднего"} title={`Среднее за 8 дней: ${average.toFixed(digits)} ${unit}; порог ±${rule.tolerance} ${unit}`}>
                             {!changed ? "↔" : delta > 0 ? "↑" : "↓"}
                           </span>}
