@@ -22,7 +22,7 @@ from store import Database
 
 database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
-COACH_CONTEXT_VERSION = 2
+COACH_CONTEXT_VERSION = 3
 
 
 account_id: ContextVar[str] = ContextVar("account_id")
@@ -281,6 +281,20 @@ def analyze_period(
     rows = store.get("activities", [])
     selected = activities_between(rows, start, end)
     previous = activities_between(rows, previous_start, previous_end) if previous_start and previous_end else None
+    reference_day = start if daily else date.today()
+    activity_summary = {
+        "strength": strength_summary(selected, include_details=True),
+        "previous_strength": strength_summary(previous) if previous is not None else None,
+        "last_sync_at": store.get("synced_at"),
+    }
+    if question:
+        month_start = reference_day.replace(day=1)
+        month_rows = activities_between(rows, month_start, reference_day)
+        activity_summary["current_month_strength"] = {
+            "from": month_start.isoformat(),
+            "to": reference_day.isoformat(),
+            **strength_summary(month_rows, include_details=True),
+        }
 
     try:
         result = running_coach.analyze(
@@ -291,14 +305,11 @@ def analyze_period(
             previous_start_date=previous_start,
             previous_end_date=previous_end,
             wellness=wellness_between(store.get("wellness_metrics", {}), start, end),
-            activity_summary={
-                "strength": strength_summary(selected, include_details=True),
-                "previous_strength": strength_summary(previous) if previous is not None else None,
-            },
+            activity_summary=activity_summary,
             question=question,
             conversation=conversation,
             daily_context=daily_coach_context(store, start) if daily else None,
-            runner_plan=plan_context(store.get("runner_plan"), start if daily else date.today()),
+            runner_plan=plan_context(store.get("runner_plan"), reference_day),
         )
     except GigaChatError as exc:
         status_code = exc.status_code
