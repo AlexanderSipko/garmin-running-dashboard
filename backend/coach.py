@@ -5,15 +5,14 @@ from datetime import date, timedelta
 from typing import Any
 
 from providers.gigachat import GigaChatClient
-from settings import settings
 
 
 class RunningCoach:
     """Generate short running summaries from the user's local activity history."""
 
-    def __init__(self, auth_key: str | None = None) -> None:
+    def __init__(self, auth_key: str) -> None:
         self.client = GigaChatClient(auth_key)
-        self.enabled = bool(auth_key) if auth_key is not None else settings.coach_enabled
+        self.enabled = bool(auth_key)
 
     @property
     def model(self) -> str:
@@ -41,7 +40,7 @@ class RunningCoach:
         conversation: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         if not self.configured:
-            raise RuntimeError("GIGACHAT_AUTH_KEY is not configured")
+            raise RuntimeError("No GigaChat key configured for this account")
 
         context = {
             "selection": {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
@@ -235,6 +234,3 @@ class RunningCoach:
             ]
 
         return context
-
-
-running_coach = RunningCoach()

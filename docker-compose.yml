@@ -2,7 +2,7 @@ services:
   backend:
     build: ./backend
     environment:
-      GARMIN_DATA_FILE: ${GARMIN_DATA_FILE:-/app/data/dashboard.json}
+      SQLITE_PATH: /app/data/dashboard.sqlite3
       DATABASE_URL: ${DATABASE_URL:-}
       SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
       APP_ORIGIN: ${APP_ORIGIN:-}

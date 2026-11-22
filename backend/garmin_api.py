@@ -1,6 +1,4 @@
-"""Read-only MCP adapter for Garmin's official Personal API."""
-import json
-from contextvars import ContextVar
+"""Read-only access to Garmin Personal API."""
 from pathlib import Path
 import math
 import time
@@ -11,32 +9,7 @@ from typing import Any
 
 from fitparse import FitFile
 from garmin_personal_api import GarminPersonalApiClient, PersonalApiAuthenticator
-from mcp.server.fastmcp import FastMCP
 from settings import settings
-
-mcp = FastMCP("Garmin Personal API")
-
-
-_garmin_credentials: ContextVar[tuple[str, Path] | None] = ContextVar("garmin_credentials", default=None)
-
-
-def call_tool_with_credentials(tool, key: str, cache_path: str, *args, **kwargs):
-    token = _garmin_credentials.set((key, Path(cache_path)))
-    try:
-        return json.loads(tool(*args, **kwargs))
-    finally:
-        _garmin_credentials.reset(token)
-
-
-def _credentials() -> tuple[str, Path]:
-    key, path = _garmin_credentials.get() or (
-        settings.garmin_personal_api_key, settings.garmin_bearer_token_cache
-    )
-    if not key:
-        raise RuntimeError("Garmin Personal API key is not configured")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return key, path
-
 
 def _clean_activity(row: dict[str, Any]) -> dict[str, Any]:
     activity_type = row.get("activityType") or row.get("activityTypeDTO") or {}
@@ -279,10 +252,8 @@ def _metric_rows(payload: Any, metric: str) -> list[dict[str, Any]]:
     return list(results_by_date.values())
 
 
-@mcp.tool()
-def get_activities(start_date: str, end_date: str, start: int = 0, limit: int = 100) -> str:
+def get_activities(start_date: str, end_date: str, start: int = 0, limit: int = 100, *, key: str, cache_path: Path) -> list[dict[str, Any]]:
     """Read one page of activity summaries for an inclusive date range."""
-    key, cache_path = _credentials()
     limit = max(1, min(int(limit), 100))
     with PersonalApiAuthenticator(bearer_token_cache_file=cache_path) as authenticator:
         token = authenticator.obtain_token(key)
@@ -293,13 +264,11 @@ def get_activities(start_date: str, end_date: str, start: int = 0, limit: int = 
             start=int(start), limit=limit, start_date=start_date,
             end_date=end_date,
         )
-    return json.dumps([_clean_activity(item) for item in activities], ensure_ascii=False)
+    return [_clean_activity(item) for item in activities]
 
 
-@mcp.tool()
-def get_running_activity_splits(activity_id: str) -> str:
+def get_running_activity_splits(activity_id: str, *, key: str, cache_path: Path) -> list[dict[str, Any]]:
     """Fetch split summaries for one running activity, when Garmin provides them."""
-    key, cache_path = _credentials()
     if not activity_id.isdigit() or int(activity_id) <= 0:
         raise ValueError("Activity ID must be a positive integer")
 
@@ -309,13 +278,11 @@ def get_running_activity_splits(activity_id: str) -> str:
         token.access_token, timeout=settings.garmin_api_timeout_seconds
     ) as client:
         activity = client.get_activity(activity_id)
-    return json.dumps(_split_rows(activity), ensure_ascii=False)
+    return _split_rows(activity)
 
 
-@mcp.tool()
-def get_running_activity_detail(activity_id: str) -> str:
+def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path) -> dict[str, Any]:
     """Fetch one run's splits and downsampled pace/HR/elevation FIT records."""
-    key, cache_path = _credentials()
     if not activity_id.isascii() or not activity_id.isdecimal() or int(activity_id) <= 0:
         raise ValueError("Activity ID must be a positive integer")
 
@@ -335,19 +302,17 @@ def get_running_activity_detail(activity_id: str) -> str:
             points, sample_count = [], 0
             track_message = "Garmin не вернул исходный FIT-файл этой тренировки."
 
-    return json.dumps({
+    return {
         "splits": splits,
         "points": points,
         "sample_count": sample_count,
         "track_available": bool(points),
         "track_message": track_message,
-    }, ensure_ascii=False)
+    }
 
 
-@mcp.tool()
-def get_wellness_metrics(start_date: str, end_date: str) -> str:
+def get_wellness_metrics(start_date: str, end_date: str, *, key: str, cache_path: Path) -> dict[str, Any]:
     """Read Garmin sleep, stress, HRV, VO2 max, resting heart rate and weight records."""
-    key, cache_path = _credentials()
     with PersonalApiAuthenticator(bearer_token_cache_file=cache_path) as authenticator:
         token = authenticator.obtain_token(key)
 
@@ -420,11 +385,7 @@ def get_wellness_metrics(start_date: str, end_date: str) -> str:
                         errors["sleep"] = "Garmin вернул пустые записи сна за последние 14 дней."
                     else:
                         errors.pop("sleep", None)
-                except Exception as exc:
+                except Exception:
                     metrics["sleep"] = recovered
-                    errors["sleep"] = str(exc)[:240]
-    return json.dumps({"metrics": metrics, "errors": errors}, ensure_ascii=False)
-
-
-if __name__ == "__main__":
-    mcp.run()
+                    errors["sleep"] = "Не удалось получить данные сна Garmin."
+    return {"metrics": metrics, "errors": errors}

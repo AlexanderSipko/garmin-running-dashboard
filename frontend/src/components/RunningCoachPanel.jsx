@@ -97,10 +97,7 @@ function RunningCoachPanel({
         ].join(" ")}>
           <b>Добавь API-ключ ИИ-провайдера</b>
           <p>
-            Добавь ключ в локальный <code>.env</code> как{" "}
-            <code>GIGACHAT_AUTH_KEY</code> в локальном <code>.env</code>, затем
-            пересобери backend. Это ключ авторизации проекта GigaChat API; не
-            access token. Ключ остаётся на бэкенде.
+            Добавь ключ авторизации GigaChat в настройках аккаунта.
           </p>
           <small>
             Условия оплаты и лимиты зависят от выбранного API-провайдера.

@@ -25,8 +25,8 @@ class GigaChatClient:
     oauth_url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     api_url = "https://api.giga.chat/v1/chat/completions"
 
-    def __init__(self, auth_key: str | None = None) -> None:
-        self.auth_key = settings.gigachat_auth_key if auth_key is None else auth_key
+    def __init__(self, auth_key: str) -> None:
+        self.auth_key = auth_key
         self.scope = settings.gigachat_scope
         self.model = settings.gigachat_model
         self.ca_bundle = settings.gigachat_ca_bundle
@@ -94,7 +94,7 @@ class GigaChatClient:
 
     def _get_access_token(self) -> str:
         if not self.auth_key:
-            raise GigaChatError("GIGACHAT_AUTH_KEY is not configured")
+            raise GigaChatError("No GigaChat key configured for this account")
         if self.ca_bundle_missing:
             raise GigaChatError(
                 "GigaChat CA certificate file is missing",

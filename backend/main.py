@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import os
-from contextlib import AsyncExitStack
 from contextvars import ContextVar
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Literal
@@ -14,8 +12,6 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 from accounts import account_routes, check_origin, decrypt
 from coach import RunningCoach
 from providers.gigachat import GigaChatClient
@@ -23,9 +19,7 @@ from providers.gigachat import GigaChatError
 from settings import settings
 from store import Database
 
-DATA_FILE = settings.garmin_data_file
-database = Database(settings.database_url, DATA_FILE.with_suffix(".sqlite3"))
-MCP_SERVER = settings.mcp_server_path
+database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
 
 
@@ -176,115 +170,8 @@ def build_dashboard(days: int) -> dict[str, Any]:
     }
 
 
-class GarminMcpGateway:
-    def __init__(self, key: str, cache_path: str) -> None:
-        self.environment = {
-            **settings.garmin_mcp_environment(),
-            "GARMIN_PERSONAL_API_KEY": key,
-            "GARMIN_BEARER_TOKEN_CACHE": cache_path,
-        }
-        self.stack: AsyncExitStack | None = None
-        self.session: ClientSession | None = None
-        self.lock = asyncio.Lock()
-
-    async def connect(self) -> ClientSession:
-        if self.session:
-            return self.session
-        async with self.lock:
-            if self.session:
-                return self.session
-            stack = AsyncExitStack()
-            await stack.__aenter__()
-            params = StdioServerParameters(
-                command=settings.python_executable,
-                args=[str(MCP_SERVER)],
-                env=self.environment,
-            )
-            try:
-                reader, writer = await stack.enter_async_context(stdio_client(params))
-                session = await stack.enter_async_context(ClientSession(reader, writer))
-                await session.initialize()
-            except Exception:
-                await stack.aclose()
-                raise
-            self.stack, self.session = stack, session
-            return session
-
-    async def activities(self, start: date, end: date) -> list[dict[str, Any]]:
-        session = await self.connect()
-        rows: list[dict[str, Any]] = []
-        for offset in range(0, 5000, 100):
-            result = await session.call_tool("get_activities", {
-                "start_date": start.isoformat(), "end_date": end.isoformat(), "start": offset, "limit": 100,
-            })
-            if result.isError:
-                message = " ".join(getattr(item, "text", "") for item in result.content).lower()
-                if "429" in message or "rate limit" in message:
-                    raise RuntimeError("rate limited")
-                if "401" in message or "unauthorized" in message:
-                    raise RuntimeError("invalid key")
-                raise RuntimeError("Personal API request failed")
-            raw = next((item.text for item in result.content if getattr(item, "text", None)), "[]")
-            page = json.loads(raw)
-            if not isinstance(page, list):
-                raise RuntimeError("Unexpected Garmin response")
-            rows.extend(page)
-            if len(page) < 100:
-                break
-        return rows
-
-    async def activity_splits(self, activity_id: int) -> list[dict[str, Any]]:
-        session = await self.connect()
-        result = await session.call_tool(
-            "get_running_activity_splits", {"activity_id": str(activity_id)}
-        )
-        if result.isError:
-            raise RuntimeError("Garmin activity detail request failed")
-        raw = next(
-            (item.text for item in result.content if getattr(item, "text", None)),
-            "[]",
-        )
-        splits = json.loads(raw)
-        if not isinstance(splits, list):
-            raise RuntimeError("Unexpected Garmin split response")
-        return splits
-
-    async def activity_detail(self, activity_id: int) -> dict[str, Any]:
-        session = await self.connect()
-        result = await session.call_tool(
-            "get_running_activity_detail", {"activity_id": str(activity_id)}
-        )
-        if result.isError:
-            raise RuntimeError("Garmin activity detail request failed")
-        raw = next((item.text for item in result.content if getattr(item, "text", None)), "{}")
-        detail = json.loads(raw)
-        if not isinstance(detail, dict):
-            raise RuntimeError("Unexpected Garmin activity detail response")
-        return detail
-
-    async def wellness_metrics(self, start: date, end: date) -> dict[str, Any]:
-        session = await self.connect()
-        result = await session.call_tool("get_wellness_metrics", {
-            "start_date": start.isoformat(), "end_date": end.isoformat(),
-        })
-        if result.isError:
-            raise RuntimeError("Garmin wellness request failed")
-        raw = next((item.text for item in result.content if getattr(item, "text", None)), "{}")
-        data = json.loads(raw)
-        if not isinstance(data, dict):
-            raise RuntimeError("Unexpected Garmin wellness response")
-        return data
-
-    async def close(self) -> None:
-        if self.stack:
-            await self.stack.aclose()
-        self.stack = None
-        self.session = None
-
-
-def call_garmin_in_process(method: str, key: str, cache_path: str, *args):
-    from garmin_mcp_server import (
-        call_tool_with_credentials,
+def call_garmin_in_process(method: str, key: str, cache_path: Path, *args):
+    from garmin_api import (
         get_activities,
         get_running_activity_detail,
         get_running_activity_splits,
@@ -295,8 +182,8 @@ def call_garmin_in_process(method: str, key: str, cache_path: str, *args):
         start, end = args
         rows = []
         for offset in range(0, 5000, 100):
-            page = call_tool_with_credentials(
-                get_activities, key, cache_path, start.isoformat(), end.isoformat(), offset, 100
+            page = get_activities(
+                start.isoformat(), end.isoformat(), offset, 100, key=key, cache_path=cache_path
             )
             rows.extend(page)
             if len(page) < 100:
@@ -304,9 +191,9 @@ def call_garmin_in_process(method: str, key: str, cache_path: str, *args):
         return rows
     if method == "wellness_metrics":
         start, end = args
-        return call_tool_with_credentials(get_wellness_metrics, key, cache_path, start.isoformat(), end.isoformat())
+        return get_wellness_metrics(start.isoformat(), end.isoformat(), key=key, cache_path=cache_path)
     tool = {"activity_detail": get_running_activity_detail, "activity_splits": get_running_activity_splits}[method]
-    return call_tool_with_credentials(tool, key, cache_path, str(args[0]))
+    return tool(str(args[0]), key=key, cache_path=cache_path)
 
 
 async def garmin_call(method: str, *args, key: str | None = None):
@@ -315,21 +202,15 @@ async def garmin_call(method: str, *args, key: str | None = None):
     if not key:
         raise HTTPException(409, "Добавь ключ Garmin в настройках аккаунта.")
     with TemporaryDirectory(prefix="garmin-") as directory:
-        cache_path = f"{directory}/token.json"
-        if os.environ.get("VERCEL"):
-            return await run_in_threadpool(call_garmin_in_process, method, key, cache_path, *args)
-        gateway = GarminMcpGateway(key, cache_path)
-        try:
-            return await getattr(gateway, method)(*args)
-        finally:
-            await gateway.close()
+        cache_path = Path(directory) / "token.json"
+        return await run_in_threadpool(call_garmin_in_process, method, key, cache_path, *args)
 
 
 async def verify_key(provider: str, key: str) -> None:
     try:
         if provider == "garmin":
             today = date.today()
-            await asyncio.wait_for(garmin_call("activities", today, today, key=key), timeout=30)
+            await garmin_call("activities", today, today, key=key)
         else:
             await run_in_threadpool(GigaChatClient(key).check_credentials)
     except Exception as exc:
@@ -476,7 +357,7 @@ def analyze_period(
         if error_code == "ca_bundle_missing":
             detail = "Не найден сертификат GigaChat: положи корневой сертификат Минцифры в папку certs проекта."
         elif status_code == 401:
-            detail = "GigaChat отклонил ключ авторизации. Проверь GIGACHAT_AUTH_KEY и scope в .env."
+            detail = "GigaChat отклонил ключ авторизации. Проверь ключ в настройках аккаунта и scope сервера."
         elif status_code == 403:
             detail = "GigaChat запретил запрос (403). Проверь права проекта и выбранный scope."
         elif status_code == 404:
