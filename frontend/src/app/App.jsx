@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
+import AccountPanel, { accountRequest } from "../components/AccountPanel";
 import CalendarPeriodExplorer from "../components/CalendarPeriodExplorer";
 import useGarminDashboard from "../hooks/useGarminDashboard";
 
-function App() {
-  const dashboard = useGarminDashboard("year", new Date());
+function Dashboard({ demo, account }) {
+  const dashboard = useGarminDashboard("year", new Date(), demo);
 
   return (
     <main className={[
@@ -16,8 +18,9 @@ function App() {
         activities={dashboard.historyActivities}
         busy={dashboard.busy}
         error={dashboard.error}
-        onSync={dashboard.sync}
+        onSync={account?.garmin ? dashboard.sync : undefined}
         publicDemo={dashboard.publicDemo}
+        coachEnabled={Boolean(account?.ai)}
         syncedAt={dashboard.syncedAt}
         usesDemoData={dashboard.usesDemoData}
         wellness={dashboard.wellness}
@@ -26,4 +29,21 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  const demoOnly = import.meta.env.VITE_PUBLIC_DEMO === "true";
+  const [account, setAccount] = useState(null);
+
+  useEffect(() => {
+    if (demoOnly) return;
+    const controller = new AbortController();
+    accountRequest("", { signal: controller.signal }).then(setAccount).catch(() => {});
+    return () => controller.abort();
+  }, [demoOnly]);
+
+  return (
+    <>
+      {!demoOnly && <AccountPanel account={account} onChange={setAccount} />}
+      <Dashboard key={account?.id || "demo"} demo={!account} account={account} />
+    </>
+  );
+}

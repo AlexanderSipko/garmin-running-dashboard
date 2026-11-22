@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { buildDashboardSummary } from "../lib/dashboardAnalytics";
 
-const publicDemo = import.meta.env.VITE_PUBLIC_DEMO === "true";
 
 function buildPublicDemoDashboard() {
   const activities = Array.from({ length: 42 }, (_, index) => {
@@ -31,14 +30,10 @@ function buildPublicDemoDashboard() {
   return { connection: { configured: false, synced_at: null }, activities, wellness: { years: [], metrics, synced_at: null, errors: {} } };
 }
 
-function useGarminDashboard(period, selectedMonth) {
-  const [data, setData] = useState(null);
+function useGarminDashboard(period, selectedMonth, publicDemo) {
+  const [data, setData] = useState(() => publicDemo ? buildPublicDemoDashboard() : { activities: [] });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (publicDemo) setData(buildPublicDemoDashboard());
-  }, []);
 
   useEffect(() => {
     if (publicDemo) return;
@@ -93,6 +88,7 @@ function useGarminDashboard(period, selectedMonth) {
     error,
     sync: publicDemo ? undefined : sync,
     publicDemo,
+    usesDemoData: publicDemo,
   };
 }
 

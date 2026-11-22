@@ -173,7 +173,7 @@ export function buildDashboardSummary(
   selectedMonth,
   today = new Date()
 ) {
-  const hasGarminActivities = Boolean(data?.activities?.length);
+  const hasGarminActivities = Array.isArray(data?.activities);
   const historyActivities = hasGarminActivities
     ? data.activities
     : demoActivities;

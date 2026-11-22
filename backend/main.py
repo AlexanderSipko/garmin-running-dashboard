@@ -1,79 +1,46 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import json
 import logging
-import os
-import tempfile
-from contextlib import AsyncExitStack, contextmanager
+from contextlib import AsyncExitStack
+from contextvars import ContextVar
+from tempfile import TemporaryDirectory
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Callable, Iterator, Literal
+from typing import Any, Callable, Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from coach import running_coach
+from accounts import account_routes, check_origin, decrypt
+from coach import RunningCoach
+from providers.gigachat import GigaChatClient
 from providers.gigachat import GigaChatError
 from settings import settings
+from store import Database
 
 DATA_FILE = settings.garmin_data_file
+database = Database(settings.database_url, DATA_FILE.with_suffix(".sqlite3"))
 MCP_SERVER = settings.mcp_server_path
 logger = logging.getLogger(__name__)
 
 
+account_id: ContextVar[str] = ContextVar("account_id")
+
+
 def read_store() -> dict[str, Any]:
-    if not DATA_FILE.exists():
-        return {"activities": [], "synced_at": None}
-    try:
-        store = json.loads(DATA_FILE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Dashboard data file is not valid JSON: {DATA_FILE}") from exc
-    if not isinstance(store, dict):
-        raise RuntimeError(f"Dashboard data file must contain a JSON object: {DATA_FILE}")
-    return store
+    return database.read(account_id.get())
 
 
-def write_store(store: dict[str, Any]) -> None:
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    file_descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{DATA_FILE.name}.", suffix=".tmp", dir=DATA_FILE.parent
-    )
-    try:
-        with os.fdopen(file_descriptor, "w", encoding="utf-8") as temporary:
-            json.dump(store, temporary, ensure_ascii=False, indent=2)
-            temporary.flush()
-            os.fsync(temporary.fileno())
-        os.replace(temporary_name, DATA_FILE)
-    except Exception:
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
+def update_store(update: Callable[[dict[str, Any]], None]) -> None:
+    database.update(account_id.get(), update)
 
 
-@contextmanager
-def _store_write_lock() -> Iterator[None]:
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    lock_file = DATA_FILE.with_name(f".{DATA_FILE.name}.lock")
-    descriptor = os.open(lock_file, os.O_CREAT | os.O_RDWR, 0o600)
-    try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
-        yield
-    finally:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
-        os.close(descriptor)
-
-
-def update_store(update: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
-    """Serialize read/merge/write updates across backend worker processes."""
-    with _store_write_lock():
-        store = read_store()
-        update(store)
-        write_store(store)
-        return store
+def personal_coach() -> RunningCoach:
+    return RunningCoach(decrypt(database.keys(account_id.get())[1]))
 
 
 def _activity_key(activity: dict[str, Any]) -> str:
@@ -184,7 +151,7 @@ def build_dashboard(days: int) -> dict[str, Any]:
         })
     return {
         "connection": {
-            "configured": bool(settings.garmin_personal_api_key),
+            "configured": bool(database.keys(account_id.get())[0]),
             "synced_at": store.get("synced_at"),
         },
         "period_days": days,
@@ -209,7 +176,12 @@ def build_dashboard(days: int) -> dict[str, Any]:
 
 
 class GarminMcpGateway:
-    def __init__(self) -> None:
+    def __init__(self, key: str, cache_path: str) -> None:
+        self.environment = {
+            **settings.garmin_mcp_environment(),
+            "GARMIN_PERSONAL_API_KEY": key,
+            "GARMIN_BEARER_TOKEN_CACHE": cache_path,
+        }
         self.stack: AsyncExitStack | None = None
         self.session: ClientSession | None = None
         self.lock = asyncio.Lock()
@@ -225,7 +197,7 @@ class GarminMcpGateway:
             params = StdioServerParameters(
                 command=settings.python_executable,
                 args=[str(MCP_SERVER)],
-                env=settings.garmin_mcp_environment(),
+                env=self.environment,
             )
             try:
                 reader, writer = await stack.enter_async_context(stdio_client(params))
@@ -309,8 +281,55 @@ class GarminMcpGateway:
         self.session = None
 
 
-gateway = GarminMcpGateway()
+async def garmin_call(method: str, *args, key: str | None = None):
+    if key is None:
+        key = decrypt(database.keys(account_id.get())[0])
+    if not key:
+        raise HTTPException(409, "Добавь ключ Garmin в настройках аккаунта.")
+    with TemporaryDirectory(prefix="garmin-") as directory:
+        gateway = GarminMcpGateway(key, f"{directory}/token.json")
+        try:
+            return await getattr(gateway, method)(*args)
+        finally:
+            await gateway.close()
+
+
+async def verify_key(provider: str, key: str) -> None:
+    try:
+        if provider == "garmin":
+            today = date.today()
+            await asyncio.wait_for(garmin_call("activities", today, today, key=key), timeout=30)
+        else:
+            await run_in_threadpool(GigaChatClient(key).check_credentials)
+    except Exception:
+        raise HTTPException(502, "Провайдер не подтвердил ключ. Проверь ключ и доступность сервиса.") from None
+
+
 app = FastAPI(title="Garmin Running Dashboard")
+accounts, current_account = account_routes(database, verify_key)
+app.include_router(accounts)
+
+
+@app.middleware("http")
+async def protect_dashboard(request: Request, call_next):
+    path = request.url.path.rstrip("/")
+    token = None
+    try:
+        check_origin(request)
+        if path.startswith("/api/") and not (
+            path == "/api/health" or path == "/api/account" or path.startswith("/api/account/")
+        ):
+            user_id, _ = await run_in_threadpool(current_account, request)
+            token = account_id.set(user_id)
+        response = await call_next(request)
+    except HTTPException as exc:
+        response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    finally:
+        if token is not None:
+            account_id.reset(token)
+    if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 class CoachPeriodRequest(BaseModel):
@@ -373,13 +392,14 @@ def analyze_period(
 ) -> dict[str, Any]:
     if end < start:
         raise HTTPException(status_code=422, detail="Конец периода раньше его начала.")
+    running_coach = personal_coach()
     if not running_coach.enabled:
         raise HTTPException(status_code=409, detail="disabled")
 
     if not running_coach.configured:
         raise HTTPException(
             status_code=409,
-            detail="Добавь GigaChat Authorization key в локальный .env проекта.",
+            detail="Добавь ключ GigaChat в настройках аккаунта.",
         )
 
     try:
@@ -444,6 +464,7 @@ def health() -> dict[str, str]:
 
 @app.get("/api/coach/status")
 def coach_status() -> dict[str, Any]:
+    running_coach = personal_coach()
     return {
         "enabled": running_coach.enabled,
         "configured": running_coach.configured,
@@ -491,9 +512,8 @@ async def activity_splits(activity_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Тренировка не найдена в Garmin.")
 
     try:
-        splits = await gateway.activity_splits(activity_id)
+        splits = await garmin_call("activity_splits", activity_id)
     except Exception:
-        await gateway.close()
         raise HTTPException(
             status_code=502,
             detail="Не удалось загрузить интервалы из Garmin. Попробуй ещё раз.",
@@ -513,9 +533,8 @@ async def activity_detail(activity_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Тренировка не найдена в Garmin.")
 
     try:
-        detail = await gateway.activity_detail(activity_id)
+        detail = await garmin_call("activity_detail", activity_id)
     except Exception:
-        await gateway.close()
         raise HTTPException(
             status_code=502,
             detail="Не удалось загрузить подробные данные тренировки из Garmin.",
@@ -525,18 +544,18 @@ async def activity_detail(activity_id: int) -> dict[str, Any]:
 
 @app.post("/api/sync")
 async def sync_activities(days: int = Query(default=365, ge=30, le=3650)) -> dict[str, Any]:
-    if not settings.garmin_personal_api_key:
-        raise HTTPException(status_code=409, detail="Добавь Garmin Personal API key в локальный .env проекта.")
+    garmin_key = decrypt(database.keys(account_id.get())[0])
+    if not garmin_key:
+        raise HTTPException(status_code=409, detail="Добавь ключ Garmin в настройках аккаунта.")
     today = date.today()
     try:
-        activities = await gateway.activities(today - timedelta(days=days - 1), today)
+        activities = await garmin_call("activities", today - timedelta(days=days - 1), today, key=garmin_key)
     except Exception as exc:
-        await gateway.close()
         reason = str(exc).lower()
         if "rate limit" in reason or "429" in reason:
             message = "Garmin временно ограничил запросы. Подожди и синхронизируй позже."
         elif "invalid key" in reason or "401" in reason:
-            message = "Garmin не принял Personal API key. Проверь локальный .env."
+            message = "Garmin не принял Personal API key. Проверь ключ в настройках аккаунта."
         else:
             message = "Не удалось получить данные Garmin. Проверь подключение и попробуй позже."
         raise HTTPException(status_code=502, detail=message) from None
@@ -554,7 +573,7 @@ async def sync_activities(days: int = Query(default=365, ge=30, le=3650)) -> dic
             today - timedelta(days=27 if has_wellness_history else 730),
             today - timedelta(days=days - 1),
         )
-        wellness_result = await gateway.wellness_metrics(wellness_start, today)
+        wellness_result = await garmin_call("wellness_metrics", wellness_start, today, key=garmin_key)
     except Exception:
         wellness_error = True
 
@@ -595,9 +614,3 @@ async def sync_activities(days: int = Query(default=365, ge=30, le=3650)) -> dic
 
     update_store(merge_sync_result)
     return build_dashboard(days)
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    await gateway.close()
-

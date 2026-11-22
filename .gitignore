@@ -18,3 +18,6 @@ credentials/
 .vercel/
 playwright-report/
 test-results/
+
+.venv/
+/data/

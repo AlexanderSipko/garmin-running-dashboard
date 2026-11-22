@@ -24,6 +24,9 @@ class Settings:
     garmin_personal_api_key: str = field(repr=False)
     garmin_bearer_token_cache: Path
     garmin_data_file: Path
+    database_url: str = field(repr=False)
+    app_origin: str
+    secrets_encryption_key: str = field(repr=False)
     garmin_api_timeout_seconds: float
     garmin_activity_timeout_seconds: float
     coach_enabled: bool
@@ -53,6 +56,9 @@ settings = Settings(
         _value("GARMIN_BEARER_TOKEN_CACHE", "/app/data/garmin-bearer-token.json")
     ),
     garmin_data_file=Path(_value("GARMIN_DATA_FILE", "data/dashboard.json")),
+    database_url=_value("DATABASE_URL"),
+    app_origin=_value("APP_ORIGIN"),
+    secrets_encryption_key=_value("SECRETS_ENCRYPTION_KEY"),
     garmin_api_timeout_seconds=25.0,
     garmin_activity_timeout_seconds=40.0,
     coach_enabled=_enabled("COACH_ENABLED", default=False),

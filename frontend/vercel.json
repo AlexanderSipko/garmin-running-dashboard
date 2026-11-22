@@ -1,5 +1,8 @@
 {
   "framework": "vite",
-  "buildCommand": "VITE_PUBLIC_DEMO=true npm run build",
-  "outputDirectory": "dist"
+  "buildCommand": "VITE_PUBLIC_DEMO=${VITE_PUBLIC_DEMO:-true} npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/backend?path=:path*" }
+  ]
 }

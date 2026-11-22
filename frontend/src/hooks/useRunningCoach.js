@@ -1,8 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-
-const summaryCache = new Map();
-const summaryInFlight = new Map();
-const summaryErrors = new Map();
+import { useEffect, useMemo, useRef, useState } from "react";
 
 function toDateString(value) {
   const date = new Date(value);
@@ -54,7 +50,8 @@ async function postJson(url, payload) {
   return result;
 }
 
-function requestSummary(key, payload, { retry = false } = {}) {
+function requestSummary(key, payload, cache, { retry = false } = {}) {
+  const { summaryCache, summaryInFlight, summaryErrors } = cache;
   if (summaryCache.has(key)) return Promise.resolve(summaryCache.get(key));
   if (summaryInFlight.has(key)) return summaryInFlight.get(key);
   if (!retry && summaryErrors.has(key)) return Promise.reject(summaryErrors.get(key));
@@ -80,6 +77,8 @@ function useRunningCoach({
   syncedAt,
   enabled,
 }) {
+  const cache = useRef({ summaryCache: new Map(), summaryInFlight: new Map(), summaryErrors: new Map() }).current;
+  const { summaryCache, summaryErrors } = cache;
   const [status, setStatus] = useState(null);
   const [summary, setSummary] = useState("");
   const [summaryUsage, setSummaryUsage] = useState(null);
@@ -116,7 +115,7 @@ function useRunningCoach({
     setLoadingSummary(true);
     setError("");
     try {
-      const result = await requestSummary(cacheKey, requestPeriod, { retry: true });
+      const result = await requestSummary(cacheKey, requestPeriod, cache, { retry: true });
       setSummary(result.answer);
       setSummaryUsage(result.usage);
     } catch (requestError) {

@@ -66,7 +66,7 @@ function DaySummary({ activities, date }) {
   );
 }
 
-function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, syncedAt, usesDemoData, wellness }) {
+function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, coachEnabled, syncedAt, usesDemoData, wellness }) {
   const availableYears = useMemo(() => {
     const years = new Set(activities.map((activity) => getActivityDate(activity).getFullYear()));
     years.add(new Date().getFullYear());
@@ -711,7 +711,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, publicDemo, s
           </>
         )}
 
-        {!publicDemo && <details className="mt-3 rounded-xl border border-[#34424a] bg-[linear-gradient(145deg,_#202a30,_#192228_80%)] p-3">
+        {coachEnabled && <details className="mt-3 rounded-xl border border-[#34424a] bg-[linear-gradient(145deg,_#202a30,_#192228_80%)] p-3">
           <summary className="cursor-pointer text-[15px] font-semibold text-[#e5ebee]">Открыть чат с тренером</summary>
           <RunningCoachPanel period={selection.type} periodStart={periodStart} periodEnd={periodEnd} syncedAt={syncedAt} hasRealData={!usesDemoData} />
         </details>}

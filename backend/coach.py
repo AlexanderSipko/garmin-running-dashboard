@@ -11,9 +11,9 @@ from settings import settings
 class RunningCoach:
     """Generate short running summaries from the user's local activity history."""
 
-    def __init__(self) -> None:
-        self.client = GigaChatClient()
-        self.enabled = settings.coach_enabled
+    def __init__(self, auth_key: str | None = None) -> None:
+        self.client = GigaChatClient(auth_key)
+        self.enabled = bool(auth_key) if auth_key is not None else settings.coach_enabled
 
     @property
     def model(self) -> str:
