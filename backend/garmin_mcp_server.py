@@ -1,5 +1,7 @@
 """Read-only MCP adapter for Garmin's official Personal API."""
 import json
+from contextvars import ContextVar
+from pathlib import Path
 import math
 import time
 import zipfile
@@ -13,6 +15,27 @@ from mcp.server.fastmcp import FastMCP
 from settings import settings
 
 mcp = FastMCP("Garmin Personal API")
+
+
+_garmin_credentials: ContextVar[tuple[str, Path] | None] = ContextVar("garmin_credentials", default=None)
+
+
+def call_tool_with_credentials(tool, key: str, cache_path: str, *args, **kwargs):
+    token = _garmin_credentials.set((key, Path(cache_path)))
+    try:
+        return json.loads(tool(*args, **kwargs))
+    finally:
+        _garmin_credentials.reset(token)
+
+
+def _credentials() -> tuple[str, Path]:
+    key, path = _garmin_credentials.get() or (
+        settings.garmin_personal_api_key, settings.garmin_bearer_token_cache
+    )
+    if not key:
+        raise RuntimeError("Garmin Personal API key is not configured")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return key, path
 
 
 def _clean_activity(row: dict[str, Any]) -> dict[str, Any]:
@@ -259,13 +282,10 @@ def _metric_rows(payload: Any, metric: str) -> list[dict[str, Any]]:
 @mcp.tool()
 def get_activities(start_date: str, end_date: str, start: int = 0, limit: int = 100) -> str:
     """Read one page of activity summaries for an inclusive date range."""
-    if not settings.garmin_personal_api_key:
-        raise RuntimeError("Garmin Personal API key is not configured")
+    key, cache_path = _credentials()
     limit = max(1, min(int(limit), 100))
-    cache_path = settings.garmin_bearer_token_cache
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
     with PersonalApiAuthenticator(bearer_token_cache_file=cache_path) as authenticator:
-        token = authenticator.obtain_token(settings.garmin_personal_api_key)
+        token = authenticator.obtain_token(key)
     with GarminPersonalApiClient(
         token.access_token, timeout=settings.garmin_api_timeout_seconds
     ) as client:
@@ -279,15 +299,12 @@ def get_activities(start_date: str, end_date: str, start: int = 0, limit: int = 
 @mcp.tool()
 def get_running_activity_splits(activity_id: str) -> str:
     """Fetch split summaries for one running activity, when Garmin provides them."""
-    if not settings.garmin_personal_api_key:
-        raise RuntimeError("Garmin Personal API key is not configured")
+    key, cache_path = _credentials()
     if not activity_id.isdigit() or int(activity_id) <= 0:
         raise ValueError("Activity ID must be a positive integer")
 
-    cache_path = settings.garmin_bearer_token_cache
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
     with PersonalApiAuthenticator(bearer_token_cache_file=cache_path) as authenticator:
-        token = authenticator.obtain_token(settings.garmin_personal_api_key)
+        token = authenticator.obtain_token(key)
     with GarminPersonalApiClient(
         token.access_token, timeout=settings.garmin_api_timeout_seconds
     ) as client:
@@ -298,15 +315,12 @@ def get_running_activity_splits(activity_id: str) -> str:
 @mcp.tool()
 def get_running_activity_detail(activity_id: str) -> str:
     """Fetch one run's splits and downsampled pace/HR/elevation FIT records."""
-    if not settings.garmin_personal_api_key:
-        raise RuntimeError("Garmin Personal API key is not configured")
+    key, cache_path = _credentials()
     if not activity_id.isascii() or not activity_id.isdecimal() or int(activity_id) <= 0:
         raise ValueError("Activity ID must be a positive integer")
 
-    cache_path = settings.garmin_bearer_token_cache
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
     with PersonalApiAuthenticator(bearer_token_cache_file=cache_path) as authenticator:
-        token = authenticator.obtain_token(settings.garmin_personal_api_key)
+        token = authenticator.obtain_token(key)
 
     with GarminPersonalApiClient(
         token.access_token, timeout=settings.garmin_activity_timeout_seconds
@@ -333,12 +347,9 @@ def get_running_activity_detail(activity_id: str) -> str:
 @mcp.tool()
 def get_wellness_metrics(start_date: str, end_date: str) -> str:
     """Read Garmin sleep, stress, HRV, VO2 max, resting heart rate and weight records."""
-    if not settings.garmin_personal_api_key:
-        raise RuntimeError("Garmin Personal API key is not configured")
-    cache_path = settings.garmin_bearer_token_cache
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    key, cache_path = _credentials()
     with PersonalApiAuthenticator(bearer_token_cache_file=cache_path) as authenticator:
-        token = authenticator.obtain_token(settings.garmin_personal_api_key)
+        token = authenticator.obtain_token(key)
 
     metrics: dict[str, list[dict[str, Any]]] = {}
     errors: dict[str, str] = {}

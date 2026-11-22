@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from contextlib import AsyncExitStack
 from contextvars import ContextVar
 from tempfile import TemporaryDirectory
@@ -281,13 +282,43 @@ class GarminMcpGateway:
         self.session = None
 
 
+def call_garmin_in_process(method: str, key: str, cache_path: str, *args):
+    from garmin_mcp_server import (
+        call_tool_with_credentials,
+        get_activities,
+        get_running_activity_detail,
+        get_running_activity_splits,
+        get_wellness_metrics,
+    )
+
+    if method == "activities":
+        start, end = args
+        rows = []
+        for offset in range(0, 5000, 100):
+            page = call_tool_with_credentials(
+                get_activities, key, cache_path, start.isoformat(), end.isoformat(), offset, 100
+            )
+            rows.extend(page)
+            if len(page) < 100:
+                break
+        return rows
+    if method == "wellness_metrics":
+        start, end = args
+        return call_tool_with_credentials(get_wellness_metrics, key, cache_path, start.isoformat(), end.isoformat())
+    tool = {"activity_detail": get_running_activity_detail, "activity_splits": get_running_activity_splits}[method]
+    return call_tool_with_credentials(tool, key, cache_path, str(args[0]))
+
+
 async def garmin_call(method: str, *args, key: str | None = None):
     if key is None:
         key = decrypt(database.keys(account_id.get())[0])
     if not key:
         raise HTTPException(409, "Добавь ключ Garmin в настройках аккаунта.")
     with TemporaryDirectory(prefix="garmin-") as directory:
-        gateway = GarminMcpGateway(key, f"{directory}/token.json")
+        cache_path = f"{directory}/token.json"
+        if os.environ.get("VERCEL"):
+            return await run_in_threadpool(call_garmin_in_process, method, key, cache_path, *args)
+        gateway = GarminMcpGateway(key, cache_path)
         try:
             return await getattr(gateway, method)(*args)
         finally:
@@ -301,8 +332,21 @@ async def verify_key(provider: str, key: str) -> None:
             await asyncio.wait_for(garmin_call("activities", today, today, key=key), timeout=30)
         else:
             await run_in_threadpool(GigaChatClient(key).check_credentials)
-    except Exception:
-        raise HTTPException(502, "Провайдер не подтвердил ключ. Проверь ключ и доступность сервиса.") from None
+    except Exception as exc:
+        status = getattr(exc, "status_code", None)
+        logger.warning("Provider key check failed: provider=%s status=%s type=%s", provider, status, type(exc).__name__)
+        name = "Garmin" if provider == "garmin" else "GigaChat"
+        if getattr(exc, "code", None) == "ca_bundle_missing":
+            detail = "GigaChat: на сервере не найден настроенный сертификат."
+        elif status in (400, 401, 403):
+            detail = f"{name} отклонил запрос ({status}). Проверь ключ и права доступа."
+        elif status == 429:
+            detail = f"{name} временно ограничил запросы (429)."
+        elif status:
+            detail = f"{name} вернул ошибку HTTP {status}."
+        else:
+            detail = f"Сервер не смог завершить проверку {name}. Подробности в логах backend."
+        raise HTTPException(502, detail) from None
 
 
 app = FastAPI(title="Garmin Running Dashboard")
@@ -466,7 +510,7 @@ def health() -> dict[str, str]:
     except Exception as exc:
         logger.error("Database health check failed: %s", type(exc).__name__)
         raise HTTPException(503, "База данных недоступна. Проверь DATABASE_URL.") from None
-    return {"status": "ok"}
+    return {"status": "ok", "database": "postgresql" if database.is_postgres else "sqlite"}
 
 
 @app.get("/api/coach/status")

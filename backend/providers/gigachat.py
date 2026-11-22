@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ssl
+import os
 import threading
 import time
 import uuid
@@ -29,6 +30,8 @@ class GigaChatClient:
         self.scope = settings.gigachat_scope
         self.model = settings.gigachat_model
         self.ca_bundle = settings.gigachat_ca_bundle
+        if not self.ca_bundle and os.environ.get("VERCEL"):
+            self.ca_bundle = str(Path(__file__).with_name("certs") / "russian_trusted_root_ca_pem.crt")
         self.ca_bundle_missing = bool(
             self.ca_bundle and not Path(self.ca_bundle).is_file()
         )
