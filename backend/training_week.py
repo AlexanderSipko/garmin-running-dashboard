@@ -93,12 +93,13 @@ def spread_days(available: list[int], count: int, preferred: int | None) -> tupl
 
 def build_week_draft(
     activities: list[dict], goal: dict, day: date, preferences: WeekPreferences, deload_weeks: dict,
+    earliest_start: date | None = None,
 ) -> dict:
     load = recent_training_load(activities, day)
     if not load["typical_km"] or load["last_run_week"] < monday_of(day) - timedelta(weeks=2):
         raise ValueError("Не хватает недавних пробежек для расчёта. Синхронизируй Garmin и обсуди возвращение к бегу с консультантом.")
 
-    start = draft_start(activities, day)
+    start = max(draft_start(activities, day), earliest_start or day)
     dates = [start + timedelta(days=index) for index in range(7)]
     race_day = parse_date(goal.get("race_date"))
     race_offset = dates.index(race_day) if race_day in dates else None

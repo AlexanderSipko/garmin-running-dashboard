@@ -327,19 +327,29 @@ export default function TrainingWeekPanel({
         )
       )}
 
-      {!draft && (!plan || plan.expired) && !loading && (
+      {state?.recap && (
+        <section className="grid gap-1 rounded-lg border border-[#405952] bg-[#20312e] p-3 text-sm">
+          <h4 className="font-bold">Итог недели · {formatDay(state.recap.from)} — {formatDay(state.recap.to)}</h4>
+          <p>По плану {distanceFormat.format(state.recap.planned)} км · по Garmin {distanceFormat.format(state.recap.actual)} км.</p>
+          <p>Записано занятий нужного типа в запланированные дни: {state.recap.matched} из {state.recap.sessions}.</p>
+          {state.recap.reviews > 0 && <p>Отзывов: {state.recap.reviews} · тяжёлых по ощущениям: {state.recap.hard}.</p>}
+          {!draft && state.recap.hard > 0 && <button type="button" className={`${button} w-fit`}
+            onClick={() => setPreferences({ ...preferences, effort: "lighter" })}>Выбрать облегчённую следующую неделю</button>}
+        </section>
+      )}
+      {!draft && (!plan || state?.recap) && !loading && (
         <WeekPreferenceFields value={preferences} onChange={setPreferences} disabled={busy} />
       )}
       <div className="flex flex-wrap gap-2">
         {draft ? <>
-          <button type="button" className={`${button} bg-[#3a3025] text-[#f3bc7f]`} disabled={busy} onClick={() => changePlan("approve")}>
-            Подтвердить план
+          <button type="button" className={`${button} bg-[#3a3025] text-[#f3bc7f]`} disabled={busy || (activePlan && !activePlan.expired)} onClick={() => changePlan("approve")}>
+            {activePlan && !activePlan.expired ? "Подтверждение доступно завтра" : "Подтвердить план"}
           </button>
           <button type="button" className={button} disabled={busy} onClick={() => changePlan("discard")}>Отклонить</button>
-        </> : (!plan || plan.expired) && (
+        </> : (!plan || state?.recap) && (
           <button type="button" className={`${button} bg-[#3a3025] text-[#f3bc7f]`} disabled={busy || !preferences.available_days.length} onClick={() => changePlan("propose")}>
             {action === "propose" && <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />}
-            {action === "propose" ? "Составляю план…" : plan?.expired ? "Предложить план на следующую неделю" : "Предложить план на 7 дней"}
+            {action === "propose" ? "Составляю план…" : state?.recap ? "Предложить план на следующую неделю" : "Предложить план на 7 дней"}
           </button>
         )}
       </div>

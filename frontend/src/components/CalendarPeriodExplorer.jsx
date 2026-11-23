@@ -13,6 +13,7 @@ import { fmtPace } from "../lib/format";
 import { dayKey, getActivityCategory, getActivityDate, summarizeCalendar } from "../lib/calendarAnalytics";
 import DaySummary from "./DaySummary";
 import DayTrainingPlan from "./DayTrainingPlan";
+import WorkoutReview from "./WorkoutReview";
 import MonthDayCalendar from "./MonthDayCalendar";
 import ActivityDetail from "./ActivityDetail";
 import RunningCoachPanel from "./RunningCoachPanel";
@@ -597,6 +598,7 @@ function CalendarPeriodExplorer({
               <>
                 {(publicDemo || dayRuns.length !== 1) && <DaySummary activities={dayRuns} date={periodStart} />}
                 {!publicDemo && <ActivityDetail date={periodStart} activities={dayRuns} detailCache={detailCache} onActivityUpdated={onActivityUpdated} />}
+                {!publicDemo && dayRuns.length > 0 && <WorkoutReview key={localDateKey(periodStart)} runs={dayRuns} plan={dayPlan} />}
               </>
             )}
           </>

@@ -333,6 +333,10 @@ def analyze_period(
         "last_sync_at": store.get("synced_at"),
     }
     calendar_sessions = store.get("calendar_training_sessions", {})
+    activity_summary["recent_runner_feedback"] = sorted(
+        (item for item in store.get("workout_reviews", {}).values() if item["date"] <= reference_day.isoformat()),
+        key=lambda item: item["date"], reverse=True,
+    )[:5]
     upcoming = [
         calendar_sessions[key]
         for key in sorted(calendar_sessions)
@@ -445,11 +449,36 @@ def coach_cache_revision(store: dict[str, Any]) -> list:
     active_week = store.get("training_week_active") or {}
     return [store.get("synced_at"), store.get("wellness_synced_at"), store.get("runner_plan"),
             active_week.get("id"), active_week.get("revision", 0), store.get("deload_weeks"),
-            store.get("calendar_plan_revision", 0)]
+            store.get("calendar_plan_revision", 0), store.get("review_revision", 0)]
 
 
 class WeekPlanRequest(BaseModel):
     day: date
+
+
+class WorkoutReview(BaseModel):
+    effort: str = Field(pattern="^(easy|normal|hard)$")
+    note: str = Field(default="", max_length=280)
+
+
+@app.get("/api/coach/review/{activity_id}")
+def get_workout_review(activity_id: int) -> dict:
+    return {"review": read_store().get("workout_reviews", {}).get(str(activity_id))}
+
+
+@app.put("/api/coach/review/{activity_id}")
+def save_workout_review(activity_id: int, request: WorkoutReview) -> dict:
+    def save(store: dict) -> None:
+        activity = next((row for row in store.get("activities", [])
+                         if str(row.get("id")) == str(activity_id) and is_running(row)), None)
+        if not activity:
+            raise HTTPException(404, "Пробежка отсутствует в истории Garmin.")
+        store.setdefault("workout_reviews", {})[str(activity_id)] = {
+            "date": str(activity["start_time"])[:10], "effort": request.effort, "note": request.note.strip(),
+        }
+        store["review_revision"] = store.get("review_revision", 0) + 1
+    update_store(save)
+    return {"saved": True}
 
 
 class WeekDraftRequest(WeekPlanRequest):
@@ -496,8 +525,18 @@ def training_week_state(store: dict[str, Any], day: date) -> dict[str, Any]:
     draft = store.get("training_week_draft")
     if draft and draft["sessions"][0]["date"] < day.isoformat():
         draft = None
+    progress = week_progress(active, activities, day) if active else None
+    recap = None
+    if progress and progress["sessions"][-1]["date"] <= day.isoformat():
+        first, last = progress["sessions"][0]["date"], progress["sessions"][-1]["date"]
+        reviews = [item for item in store.get("workout_reviews", {}).values() if first <= item["date"] <= last]
+        recap = {
+            "from": first, "to": last, "planned": progress["planned_km"], "actual": progress["actual_run_km"],
+            "matched": progress["matched_sessions"], "sessions": progress["planned_sessions"],
+            "hard": sum(item["effort"] == "hard" for item in reviews), "reviews": len(reviews),
+        }
     return {
-        "active": week_progress(active, activities, day) if active else None,
+        "active": progress, "recap": recap,
         "draft": week_progress(include_calendar_sessions(draft, store.get("calendar_training_sessions", {})), [], day)
         if draft else None,
         "synced_at": store.get("synced_at"),
@@ -519,13 +558,14 @@ def propose_training_week(request: WeekDraftRequest) -> dict[str, Any]:
 
     def save_draft(store: dict[str, Any]) -> None:
         state = training_week_state(store, day)
-        if state["active"] and not state["active"]["expired"]:
+        if state["active"] and not state["recap"]:
             raise HTTPException(409, "Сначала заверши текущий план недели.")
         if state["draft"]:
             return
         try:
             draft = build_week_draft(
                 store.get("activities", []), store.get("runner_plan") or {}, day, request.preferences, store.get("deload_weeks", {}),
+                earliest_start=date.fromisoformat(state["recap"]["to"]) + timedelta(days=1) if state["recap"] else None,
             )
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None

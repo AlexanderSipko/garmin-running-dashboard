@@ -51,7 +51,14 @@ function WeekVolumeComparison({ comparison, previousDeload }) {
           title="Медиана километража за 6 предыдущих завершённых недель"
         />
       )}
-      {previousKm > 0 && !previousDeload && (
+      {previousDeload ? (
+        typicalKm > 0 ? (
+          <ComparisonItem label="Ориентир" km={typicalKm} className="col-start-3"
+            title="После разгрузки ориентир — медиана шести завершённых недель" />
+        ) : (
+          <div className="col-start-3 text-[#adbbc0]"><dt>Ориентир</dt><dd>Мало данных</dd></div>
+        )
+      ) : previousKm > 0 && (
         <ComparisonItem
           label="Ориентир +10%" km={previousKm * 1.1} className="col-start-3"
           title="Ориентир для сравнения объёма, 110% от прошлой недели"
