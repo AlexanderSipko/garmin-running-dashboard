@@ -7,3 +7,4 @@ psycopg[binary]>=3.2,<4
 
 cryptography>=44
 email-validator>=2,<3
+mcp>=1.28.1,<2

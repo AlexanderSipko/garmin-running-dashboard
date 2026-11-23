@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import ssl
 import os
 import threading
@@ -56,11 +57,16 @@ class GigaChatClient:
 
     def complete(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         max_tokens: int,
         temperature: float,
+        *,
+        functions: list[dict] | None = None,
+        function_call: str = "auto",
+        timeout: float = 45,
+        auth_timeout: float = 25,
     ) -> dict[str, Any]:
-        token = self._get_access_token()
+        token = self._get_access_token(timeout=auth_timeout)
         payload = {
             "model": self.model,
             "messages": messages,
@@ -68,12 +74,16 @@ class GigaChatClient:
             "temperature": temperature,
         }
 
+        if functions:
+            payload["functions"] = functions
+            payload["function_call"] = function_call
+
         try:
             response = httpx.post(
                 self.api_url,
                 headers={"Authorization": f"Bearer {token}"},
                 json=payload,
-                timeout=45,
+                timeout=timeout,
                 verify=self.verify,
             )
         except httpx.RequestError as exc:
@@ -89,10 +99,52 @@ class GigaChatClient:
         except ValueError:
             raise GigaChatError("GigaChat returned invalid JSON") from None
 
+    def complete_with_tools(self, messages, max_tokens, temperature, tools):
+        functions = tools.discover()
+        chat_limits = {"timeout": 13, "auth_timeout": 10}
+        try:
+            response = self.complete(messages, max_tokens, temperature, functions=functions, **chat_limits)
+        except GigaChatError as exc:
+            if exc.code != "functions_unsupported":
+                raise
+            return self.complete(messages, max_tokens, temperature, **chat_limits)
+        choices = response.get("choices") or []
+        turn = choices[0].get("message", {}) if choices else {}
+        call = turn.get("function_call")
+        if not isinstance(call, dict):
+            return response
+
+        name = call.get("name")
+        arguments = call.get("arguments")
+        if name not in {tool["name"] for tool in functions} or not isinstance(arguments, dict):
+            return self.complete(messages, max_tokens, temperature, functions=functions, function_call="none", **chat_limits)
+
+        try:
+            result = tools.call(name, arguments)
+        except Exception:
+            result = {"error": "Инструмент Garmin временно недоступен."}
+        assistant_turn = {"role": "assistant", "content": turn.get("content") or "", "function_call": call}
+        if turn.get("functions_state_id"):
+            assistant_turn["functions_state_id"] = turn["functions_state_id"]
+
+        final = self.complete([
+            *messages,
+            assistant_turn,
+            {"role": "function", "name": name, "content": json.dumps(result, ensure_ascii=False, separators=(",", ":"))},
+        ], max_tokens, temperature, functions=functions, function_call="none", **chat_limits)
+
+        first_usage = response.get("usage") or {}
+        final_usage = final.get("usage") or {}
+        final["usage"] = {
+            key: (first_usage.get(key) or 0) + (final_usage.get(key) or 0)
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+        }
+        return final
+
     def check_credentials(self) -> None:
         self._get_access_token()
 
-    def _get_access_token(self) -> str:
+    def _get_access_token(self, timeout: float = 25) -> str:
         if not self.auth_key:
             raise GigaChatError("No GigaChat key configured for this account")
         if self.ca_bundle_missing:
@@ -122,7 +174,7 @@ class GigaChatClient:
                         "RqUID": str(uuid.uuid4()),
                     },
                     data={"scope": self.scope},
-                    timeout=25,
+                    timeout=timeout,
                     verify=self.verify,
                 )
             except httpx.RequestError as exc:
@@ -155,6 +207,9 @@ class GigaChatClient:
             details = body.get("error", body) if isinstance(body, dict) else {}
             if isinstance(details, dict):
                 code = details.get("code") or details.get("type")
+                message = str(details.get("message") or "").lower()
+                if "model does not support functions" in message:
+                    code = "functions_unsupported"
         except ValueError:
             pass
 

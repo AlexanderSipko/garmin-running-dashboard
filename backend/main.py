@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Callable, Literal
+from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from accounts import account_routes, check_origin, decrypt
 from coach import RunningCoach
+from coach_tools import GarminCoachTools, activity_pace
 from dashboard_data import build_dashboard, merge_activities, monday_of, parse_date
 from providers.gigachat import GigaChatClient
 from providers.gigachat import GigaChatError
@@ -22,7 +23,8 @@ from store import Database
 
 database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
-COACH_CONTEXT_VERSION = 3
+COACH_CONTEXT_VERSION = 5
+COACH_CHAT_TURNS = 60
 
 
 account_id: ContextVar[str] = ContextVar("account_id")
@@ -134,20 +136,16 @@ async def protect_dashboard(request: Request, call_next):
 
 class CoachPeriodRequest(BaseModel):
     daily: bool = False
+    focus_date: date | None = None
     start_date: date
     end_date: date
     previous_start_date: date | None = None
     previous_end_date: date | None = None
 
 
-class CoachChatTurn(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=1200)
-
-
 class CoachChatRequest(CoachPeriodRequest):
     question: str = Field(min_length=1, max_length=1200)
-    conversation: list[CoachChatTurn] = Field(default_factory=list, max_length=8)
+    summary: str | None = Field(default=None, max_length=1200)
 
 
 def activities_between(rows: list[dict[str, Any]], start: date, end: date) -> list[dict[str, Any]]:
@@ -232,13 +230,23 @@ def daily_coach_context(store: dict[str, Any], day: date) -> dict[str, Any]:
             "run_km": round(sum(float(row.get("distance_meters") or 0) for row in runs) / 1000, 1),
         }
 
+    today_rows = activities_between(store.get("activities", []), day, day)
     return {
+        "date": day.isoformat(),
         "last_sync_at": store.get("synced_at"),
+        "wellness_today": wellness_between(store.get("wellness_metrics", {}), day, day),
         "today_recorded_activities": [
-            {"name": str(item.get("name") or "")[:100], "type": item.get("type")}
-            for item in store.get("activities", [])
-            if parse_date(item.get("start_time")) == day
-        ][:8],
+            {
+                "id": item.get("id"),
+                "name": str(item.get("name") or "")[:80],
+                "type": item.get("type"),
+                "km": round(float(item["distance_meters"]) / 1000, 2) if item.get("distance_meters") else None,
+                "pace": activity_pace(item) if is_running(item) else None,
+                "avg_bpm": item.get("avg_hr_bpm"),
+                "duration_seconds": item.get("moving_duration_seconds") or item.get("duration_seconds"),
+            }
+            for item in today_rows[:8]
+        ],
         "current_week_through_today": load(week_start, day),
         "previous_week_same_days": load(previous_start, day - timedelta(days=7)),
         "previous_full_week": load(previous_start, previous_end),
@@ -260,11 +268,10 @@ def analyze_period(
     previous_start: date | None = None,
     previous_end: date | None = None,
     question: str | None = None,
-    conversation: list[dict[str, str]] | None = None,
     daily: bool = False,
+    focus_date: date | None = None,
+    chat_summary: str | None = None,
 ) -> dict[str, Any]:
-    if daily and start != end:
-        raise HTTPException(422, "Сводка дня доступна для одной даты.")
     if end < start:
         raise HTTPException(status_code=422, detail="Конец периода раньше его начала.")
     running_coach = personal_coach()
@@ -278,10 +285,34 @@ def analyze_period(
         )
 
     store = read_store()
+    reference_day = (focus_date or start) if daily else date.today()
+    if start <= reference_day < end:
+        end = reference_day
+        if previous_start and previous_end:
+            previous_end = min(previous_end, previous_start + (end - start))
+
     rows = store.get("activities", [])
     selected = activities_between(rows, start, end)
     previous = activities_between(rows, previous_start, previous_end) if previous_start and previous_end else None
-    reference_day = start if daily else date.today()
+    tools = None
+    conversation = []
+    if question:
+        user_id = account_id.get()
+        tools = GarminCoachTools(
+            store,
+            read_detail=lambda activity_id: database.read_activity_detail(user_id, activity_id),
+            garmin_key=lambda: decrypt(database.keys(user_id)[0]),
+        )
+        conversation = store.get("coach_chat_history", [])[-(4 if chat_summary else 6):]
+        if chat_summary:
+            conversation = [{"role": "assistant", "content": chat_summary}, *conversation]
+    elif daily:
+        day_key = reference_day.isoformat()
+        conversation = [
+            turn for turn in store.get("coach_chat_history", [])
+            if turn.get("focus_date") == day_key
+        ][-4:]
+
     activity_summary = {
         "strength": strength_summary(selected, include_details=True),
         "previous_strength": strength_summary(previous) if previous is not None else None,
@@ -308,8 +339,9 @@ def analyze_period(
             activity_summary=activity_summary,
             question=question,
             conversation=conversation,
-            daily_context=daily_coach_context(store, start) if daily else None,
+            daily_context=daily_coach_context(store, reference_day) if daily else None,
             runner_plan=plan_context(store.get("runner_plan"), reference_day),
+            tools=tools,
         )
     except GigaChatError as exc:
         status_code = exc.status_code
@@ -372,47 +404,87 @@ def coach_status() -> dict[str, Any]:
     }
 
 
+def daily_cache_key(day: date, start: date, end: date) -> str:
+    return f"{day.isoformat()}:{start.isoformat()}:{end.isoformat()}"
+
+
+def coach_cache_revision(store: dict[str, Any]) -> list:
+    return [store.get("synced_at"), store.get("wellness_synced_at"), store.get("runner_plan")]
+
+
 @app.get("/api/coach/daily")
-def saved_daily_summary(day: date):
+def saved_daily_summary(day: date, start_date: date | None = None, end_date: date | None = None):
     if not database.keys(account_id.get())[1]:
         raise HTTPException(409, "Добавь ключ GigaChat в настройках аккаунта.")
-    saved = read_store().get("coach_daily", {}).get(day.isoformat())
-    return saved if saved and saved.get("context_version") == COACH_CONTEXT_VERSION else None
+    store = read_store()
+    key = daily_cache_key(day, start_date or day, end_date or day)
+    saved = store.get("coach_daily", {}).get(key)
+    if not saved or saved.get("context_version") != COACH_CONTEXT_VERSION:
+        return None
+    if saved.get("revision") != coach_cache_revision(store):
+        return None
+    return {key: saved[key] for key in ("answer", "model", "usage")}
 
 
 @app.post("/api/coach/summary")
 def coach_summary(request: CoachPeriodRequest) -> dict[str, Any]:
-    plan_before_request = read_store().get("runner_plan") if request.daily else None
+    revision = coach_cache_revision(read_store()) if request.daily else None
     result = analyze_period(
         request.start_date,
         request.end_date,
         request.previous_start_date,
         request.previous_end_date,
         daily=request.daily,
+        focus_date=request.focus_date,
     )
     if request.daily:
+        key = daily_cache_key(request.focus_date or request.start_date, request.start_date, request.end_date)
+
         def save_summary(store: dict[str, Any]) -> None:
-            if store.get("runner_plan") != plan_before_request:
+            if coach_cache_revision(store) != revision:
                 return
             entries = store.get("coach_daily", {})
-            entries[request.start_date.isoformat()] = {**result, "context_version": COACH_CONTEXT_VERSION}
-            store["coach_daily"] = dict(sorted(entries.items(), reverse=True)[:7])
+            entries.pop(key, None)
+            entries[key] = {**result, "context_version": COACH_CONTEXT_VERSION, "revision": revision}
+            store["coach_daily"] = dict(list(entries.items())[-12:])
 
         update_store(save_summary)
     return result
 
 
+@app.get("/api/coach/chat")
+def coach_chat_history() -> dict[str, Any]:
+    return {"messages": read_store().get("coach_chat_history", [])[-COACH_CHAT_TURNS:]}
+
+
 @app.post("/api/coach/chat")
 def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
-    return analyze_period(
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(422, "Напиши вопрос консультанту.")
+    result = analyze_period(
         request.start_date,
         request.end_date,
         request.previous_start_date,
         request.previous_end_date,
-        question=request.question,
-        conversation=[turn.model_dump() for turn in request.conversation],
+        question=question,
         daily=request.daily,
+        focus_date=request.focus_date,
+        chat_summary=request.summary,
     )
+
+    focus_day = (request.focus_date or request.start_date).isoformat()
+
+    def save_turns(store: dict[str, Any]) -> None:
+        history = store.get("coach_chat_history", [])
+        history.extend([
+            {"role": "user", "content": question, "focus_date": focus_day},
+            {"role": "assistant", "content": result["answer"], "usage": result["usage"], "focus_date": focus_day},
+        ])
+        store["coach_chat_history"] = history[-COACH_CHAT_TURNS:]
+
+    update_store(save_turns)
+    return result
 
 
 @app.get("/api/dashboard")

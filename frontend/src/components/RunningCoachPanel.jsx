@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Maximize2, Minimize2, ScanLine, Send, Sparkles, X } from "lucide-react";
 import useRunningCoach from "../hooks/useRunningCoach";
 
-function Consultation({ daily, label, period, periodStart, periodEnd, syncedAt }) {
+function Consultation({ active, focusDay, label, period, periodStart, periodEnd, syncedAt }) {
   const [question, setQuestion] = useState("");
-  const coach = useRunningCoach({ period, periodStart, periodEnd, syncedAt, daily });
+  const coach = useRunningCoach({ period, periodStart, periodEnd, syncedAt, focusDay, active });
   const ready = coach.statusChecked && coach.configured && !coach.unavailable;
   const busy = coach.loadingSummary || coach.sending;
 
@@ -19,17 +19,18 @@ function Consultation({ daily, label, period, periodStart, periodEnd, syncedAt }
     <div className="grid gap-3">
       <div className="rounded-xl border border-[#415157] bg-[#172229] p-3">
         <h3 className="flex items-center gap-2 text-sm font-bold text-[#f3bc7f]">
-          <Sparkles size={15} /> {daily ? "Сводка дня" : label}
+          <Sparkles size={15} /> Сводка и рекомендации
         </h3>
+        <p className="mt-1 text-xs text-slate-400">Сегодня · период: {label}</p>
         <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed" aria-live="polite">
-          {coach.summary || (coach.loadingSummary ? "Готовлю сводку…" : daily
-            ? "Сон, восстановление, нагрузка и фраза дня."
-            : "Объём, динамика и совет по выбранному периоду.")}
+          {coach.summary || (coach.loadingSummary
+            ? "Готовлю сводку…"
+            : "Разбор сегодняшней тренировки, восстановления и прогресса к цели.")}
         </p>
         <button className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#eab16a] px-3 text-sm font-semibold text-[#17120e] disabled:opacity-50"
           type="button" onClick={coach.refreshSummary} disabled={!ready || busy}>
           {coach.loadingSummary && <LoaderCircle size={14} className="animate-spin" />}
-          {coach.summary ? "Обновить сводку" : daily ? "Получить сводку дня" : "Разобрать период"}
+          {coach.summary ? "Обновить сводку" : "Получить сводку"}
         </button>
       </div>
       {coach.messages.length > 0 && <div className="grid max-h-72 gap-2 overflow-y-auto" aria-live="polite">
@@ -41,10 +42,10 @@ function Consultation({ daily, label, period, periodStart, periodEnd, syncedAt }
         ))}
       </div>}
       <form className="grid grid-cols-[minmax(0,1fr)_40px] gap-2" onSubmit={submit}>
-        <input aria-label="Уточняющий вопрос" className="min-w-0 rounded-lg border border-[#415157] bg-[#172229] px-3 py-2 text-sm"
+        <input aria-label="Самочувствие или вопрос консультанту" className="min-w-0 rounded-lg border border-[#415157] bg-[#172229] px-3 py-2 text-sm"
           value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={1200}
-          placeholder={daily ? "Что сделать сегодня?" : "Уточнить по периоду"} />
-        <button aria-label="Отправить вопрос" type="submit" disabled={!ready || busy || !question.trim()}
+          placeholder="Как себя чувствуешь? Или задай вопрос" />
+        <button aria-label="Отправить вопрос" type="submit" disabled={!ready || busy || coach.historyLoading || !question.trim()}
           className="grid place-items-center rounded-lg bg-[#31434b] disabled:opacity-50">
           {coach.sending ? <LoaderCircle size={16} className="animate-spin" /> : <Send size={16} />}
         </button>
@@ -67,10 +68,7 @@ export default function RunningCoachPanel({ period, periodStart, periodEnd, labe
     if (!isOpen && modal.current.open) modal.current.close();
   }, [isOpen]);
 
-  const [view, setView] = useState("today");
-  const [openedPeriod, setOpenedPeriod] = useState(false);
-  const today = new Date();
-  const activeToday = view === "today";
+  const focusDay = new Date();
 
   function openConsultation() {
     setOpened(true);
@@ -103,21 +101,12 @@ export default function RunningCoachPanel({ period, periodStart, periodEnd, labe
             </div>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6">
-            <div className="my-3 grid grid-cols-2 gap-1 rounded-xl bg-[#172229] p-1">
-              {[["today", "Сегодня"], ["period", "Выбранный период"]].map(([key, title]) => (
-                <button key={key} type="button" aria-pressed={view === key} onClick={() => { setView(key); if (key === "period") setOpenedPeriod(true); }}
-                  className={`min-h-9 rounded-lg px-1 text-xs font-semibold ${view === key ? "bg-[#413426] text-[#f3bc7f]" : "text-slate-300"}`}>
-                  {title}
-                </button>
-              ))}
-            </div>
-            <div hidden={!activeToday}>
-              {opened && <Consultation key={today.toDateString()} daily period="day" periodStart={today} periodEnd={today} syncedAt={syncedAt} />}
-            </div>
-            <div hidden={activeToday}>
-              {openedPeriod && <Consultation key={`${period}:${periodStart}:${periodEnd}`}
-                label={label} period={period} periodStart={periodStart} periodEnd={periodEnd} syncedAt={syncedAt} />}
-            </div>
+            {opened && (
+              <div className="pt-3">
+                <Consultation active={isOpen} focusDay={focusDay} label={label}
+                  period={period} periodStart={periodStart} periodEnd={periodEnd} syncedAt={syncedAt} />
+              </div>
+            )}
           </div>
         </div>
       </dialog>

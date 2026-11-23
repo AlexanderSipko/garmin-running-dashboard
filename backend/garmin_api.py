@@ -285,15 +285,16 @@ def get_activities(start_date: str, end_date: str, start: int = 0, limit: int = 
     return [_clean_activity(item) for item in activities]
 
 
-def get_running_activity_splits(activity_id: str, *, key: str, cache_path: Path) -> list[dict[str, Any]]:
+def get_running_activity_splits(activity_id: str, *, key: str, cache_path: Path, timeout: float | None = None) -> list[dict[str, Any]]:
     """Fetch split summaries for one running activity, when Garmin provides them."""
     if not activity_id.isdigit() or int(activity_id) <= 0:
         raise ValueError("Activity ID must be a positive integer")
 
-    with PersonalApiAuthenticator(bearer_token_cache_file=cache_path) as authenticator:
+    request_timeout = timeout or settings.garmin_api_timeout_seconds
+    with PersonalApiAuthenticator(bearer_token_cache_file=cache_path, timeout=request_timeout) as authenticator:
         token = authenticator.obtain_token(key)
     with GarminPersonalApiClient(
-        token.access_token, timeout=settings.garmin_api_timeout_seconds
+        token.access_token, timeout=request_timeout
     ) as client:
         activity = client.get_activity(activity_id)
     return _split_rows(activity)
@@ -343,6 +344,22 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         "track_available": bool(points),
         "track_message": track_message,
     }
+
+
+def get_wellness_series(metric: str, start_date: date, end_date: date, *, key: str, cache_path: Path) -> list[dict]:
+    methods = {
+        "sleep": "get_daily_sleep_summaries",
+        "hrv": "get_daily_hrv_summaries",
+        "resting_hr": "get_daily_summaries",
+    }
+    with PersonalApiAuthenticator(bearer_token_cache_file=cache_path, timeout=5) as authenticator:
+        token = authenticator.obtain_token(key)
+    with GarminPersonalApiClient(token.access_token, timeout=5) as client:
+        method = getattr(client, methods[metric])
+        payload = method(start_date.isoformat(), end_date.isoformat())
+        if metric == "sleep" and start_date == end_date and not _metric_rows(payload, metric):
+            payload = client.get_daily_sleep(start_date.isoformat())
+    return _metric_rows(payload, metric)
 
 
 def get_wellness_metrics(start_date: str, end_date: str, *, key: str, cache_path: Path) -> dict[str, Any]:

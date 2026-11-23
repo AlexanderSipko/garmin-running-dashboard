@@ -75,7 +75,8 @@ function useRunningCoach({
   periodStart,
   periodEnd,
   syncedAt,
-  daily = false,
+  focusDay,
+  active = true,
 }) {
   const cache = useRef({ summaryCache: new Map(), summaryInFlight: new Map(), summaryErrors: new Map() }).current;
   const { summaryCache, summaryErrors } = cache;
@@ -83,17 +84,18 @@ function useRunningCoach({
   const [summary, setSummary] = useState("");
   const [summaryUsage, setSummaryUsage] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
+  const focusDate = toDateString(focusDay);
   const requestPeriod = useMemo(
-    () => ({ ...buildRequestPeriod(period, periodStart, periodEnd), daily }),
-    [period, periodStart, periodEnd, daily]
+    () => ({ ...buildRequestPeriod(period, periodStart, periodEnd), daily: true, focus_date: focusDate }),
+    [period, periodStart, periodEnd, focusDate]
   );
-  const cacheKey = `${period}:${requestPeriod.start_date}:${
-    requestPeriod.end_date
-  }:${syncedAt || "unsynced"}`;
+  const cacheKey = `${focusDate}:${period}:${requestPeriod.start_date}:${requestPeriod.end_date}:${syncedAt || "unsynced"}`;
+
 
   useEffect(() => {
     fetch("/api/coach/status")
@@ -103,17 +105,34 @@ function useRunningCoach({
   }, []);
 
   useEffect(() => {
-    setMessages([]);
     setError("");
     setSummary(summaryCache.get(cacheKey)?.answer || "");
     setSummaryUsage(summaryCache.get(cacheKey)?.usage || null);
   }, [cacheKey]);
 
   useEffect(() => {
-    if (!daily || !status?.configured) return;
+    if (!active) return;
     const controller = new AbortController();
-    const requestDate = encodeURIComponent(requestPeriod.start_date);
-    fetch(`/api/coach/daily?day=${requestDate}`, { signal: controller.signal })
+    setHistoryLoading(true);
+    fetch("/api/coach/chat", { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => {
+        if (!controller.signal.aborted && Array.isArray(result?.messages)) setMessages(result.messages);
+      })
+      .catch(() => {})
+      .finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
+    return () => controller.abort();
+  }, [active]);
+
+  useEffect(() => {
+    if (!active || !status?.configured) return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({
+      day: focusDate,
+      start_date: requestPeriod.start_date,
+      end_date: requestPeriod.end_date,
+    });
+    fetch(`/api/coach/daily?${query}`, { signal: controller.signal })
       .then((response) => response.ok ? response.json() : null)
       .then((saved) => {
         if (saved && !controller.signal.aborted) {
@@ -123,7 +142,7 @@ function useRunningCoach({
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [daily, requestPeriod.start_date, status?.configured, syncedAt]);
+  }, [active, focusDate, requestPeriod.start_date, requestPeriod.end_date, status?.configured, syncedAt]);
 
   const refreshSummary = async () => {
     summaryCache.delete(cacheKey);
@@ -143,12 +162,8 @@ function useRunningCoach({
 
   const ask = async (question) => {
     const cleanQuestion = question.trim();
-    if (!cleanQuestion || sending) return;
+    if (!cleanQuestion || sending || historyLoading) return;
 
-    const conversation = [
-      ...(summary ? [{ role: "assistant", content: summary.slice(0, 1200) }] : []),
-      ...messages.slice(-3).map(({ role, content }) => ({ role, content: content.slice(0, 1200) })),
-    ];
     setMessages((current) => [
       ...current,
       { role: "user", content: cleanQuestion, usage: null },
@@ -160,13 +175,14 @@ function useRunningCoach({
       const result = await postJson("/api/coach/chat", {
         ...requestPeriod,
         question: cleanQuestion,
-        conversation,
+        summary: summary ? summary.slice(0, 1200) : null,
       });
       setMessages((current) => [
         ...current,
         { role: "assistant", content: result.answer, usage: result.usage },
       ]);
     } catch (requestError) {
+      setMessages((current) => current.slice(0, -1));
       setError(requestError.message);
     } finally {
       setSending(false);
@@ -192,6 +208,7 @@ function useRunningCoach({
     messages,
     loadingSummary,
     sending,
+    historyLoading,
     error,
     totalTokens,
     ask,
