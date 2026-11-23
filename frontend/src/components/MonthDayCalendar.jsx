@@ -1,9 +1,10 @@
-import { Fragment } from "react";
-import { Dumbbell, Gauge, HeartPulse } from "lucide-react";
+import { Fragment, useState } from "react";
+import { Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
 import { dayKey, weeklyVolumeComparison } from "../lib/calendarAnalytics";
 import { fmtPace } from "../lib/format";
+import { localDateKey } from "../lib/wellnessDates";
 
-const percent = new Intl.NumberFormat("ru-RU", { style: "percent", signDisplay: "exceptZero" });
+const percent = new Intl.NumberFormat("ru-RU", { style: "percent", signDisplay: "exceptZero", maximumFractionDigits: 1 });
 const distance = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
 
 const weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -17,9 +18,40 @@ function buildWeeks(year, month) {
   }));
 }
 
+function WeekVolumeComparison({ comparison, previousDeload }) {
+  const { previousKm, previousChange, typicalKm, typicalChange } = comparison;
+  if (previousKm == null) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-[#adbbc0]">
+      <span title={`Предыдущая неделя: ${distance.format(previousKm)} км`}>
+        {previousChange == null ? "Прошлая неделя" : "К прошлой"}
+        {previousChange != null && <b className="ml-1 text-[#f3bc7f]">{percent.format(previousChange)}</b>}
+        <span className="ml-1">({distance.format(previousKm)} км)</span>
+        {previousDeload && <span className="ml-1 text-[#9fcfc2]">· разгрузка</span>}
+      </span>
+      {typicalKm != null && (
+        <span title="Медиана километража за 6 предыдущих завершённых недель">
+          {typicalChange == null ? "Типичная неделя" : "К типичной"}
+          {typicalChange != null && <b className="ml-1 text-[#f3bc7f]">{percent.format(typicalChange)}</b>}
+          <span className="ml-1">({distance.format(typicalKm)} км)</span>
+        </span>
+      )}
+      {previousKm > 0 && !previousDeload && (
+        <span title="Ориентир для сравнения объёма, 110% от прошлой недели">
+          Ориентир +10%: <b className="text-[#e5ebee]">{distance.format(previousKm * 1.1)} км</b>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function MonthDayCalendar({
   expandedYear, calendarMonth, monthNames, daySummaries, selectedTypes, selection, onSelectDay,
+  deloadWeeks = {}, onMarkDeload, syncBusy,
 }) {
+  const [pendingWeek, setPendingWeek] = useState(null);
+  const [labelError, setLabelError] = useState(null);
   const calendarWeeks = buildWeeks(expandedYear, calendarMonth);
   const today = new Date();
   const showRunning = selectedTypes.includes("running");
@@ -28,6 +60,18 @@ export default function MonthDayCalendar({
     const [year, month, day] = key.split("-").map(Number);
     const date = new Date(year, month, day);
     if (!historyStart || date < historyStart) historyStart = date;
+  }
+
+  async function toggleDeload(weekKey, enabled) {
+    setPendingWeek(weekKey);
+    setLabelError(null);
+    try {
+      await onMarkDeload(weekKey, enabled);
+    } catch (error) {
+      setLabelError({ weekKey, message: error.message });
+    } finally {
+      setPendingWeek(null);
+    }
   }
 
   return (
@@ -39,7 +83,7 @@ export default function MonthDayCalendar({
         {weekdays.map((label, index) => (
           <span key={label} className={`text-center text-[11px] font-bold ${index >= 5 ? "rounded-md bg-[#473029] py-0.5 text-[#ffd1a5]" : "text-[color:var(--soft)]"}`}>{label}</span>
         ))}
-        {calendarWeeks.map((week, weekIndex) => {
+        {calendarWeeks.map((week) => {
           const weekRuns = week.days.map((day) => daySummaries.get(dayKey(day))).filter(Boolean);
           const weekKm = weekRuns.reduce((sum, item) => sum + item.runKm, 0);
           const weekSeconds = weekRuns.reduce((sum, item) => sum + item.runSeconds, 0);
@@ -47,24 +91,33 @@ export default function MonthDayCalendar({
           const weekHrSeconds = weekRuns.reduce((sum, item) => sum + item.hrSeconds, 0);
           const weekStart = week.days[0];
           const nextMonday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 7);
+          const weekKey = localDateKey(weekStart);
+          const markedDeload = Boolean(deloadWeeks[weekKey]);
+          const currentWeek = weekStart <= today && today < nextMonday;
           const comparison = showRunning && weekStart <= today
             ? weeklyVolumeComparison(daySummaries, weekStart, weekKm, historyStart)
             : null;
-          const comparisonText = comparison && percent.format(comparison.change / 100);
-          const comparisonHint = comparison && `${comparisonText} к среднему за предыдущие 6 недель (${distance.format(comparison.averageKm)} км)${today < nextMonday ? ". Текущая неделя ещё идёт." : ""}`;
-          return <Fragment key={weekIndex}>
-            <div className="col-span-7 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-[#ffffff0d] bg-[#ffffff06] px-2 py-1 text-xs tabular-nums max-[480px]:gap-x-2 font-semibold text-[color:var(--soft)]">
-              <span className="inline-flex items-center gap-1.5">
-                {weekKm.toFixed(1)} км
-                {comparison && (
-                  <span title={comparisonHint} aria-label={comparisonHint}
-                    className={`rounded bg-white/6 px-1.5 py-0.5 text-[11px] ${comparison.change > 0 ? "text-[#f3bc7f]" : comparison.change < 0 ? "text-[#a9c2f5]" : "text-slate-300"}`}>
-                    {comparisonText}
-                  </span>
+          const previousDeload = comparison && Boolean(deloadWeeks[localDateKey(comparison.previousMonday)]);
+
+          return <Fragment key={weekKey}>
+            <div className="col-span-7 mt-1 grid gap-1 rounded-md border border-[#ffffff0d] bg-[#ffffff06] px-2 py-1 text-xs tabular-nums text-[color:var(--soft)]">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-semibold max-[480px]:gap-x-2">
+                <span>{distance.format(weekKm)} км{currentWeek && <span className="ml-1 font-normal">на сегодня</span>}</span>
+                <span className="inline-flex items-center gap-1"><Gauge size={12} aria-label="Темп" />{weekKm ? `${fmtPace(weekSeconds / weekKm)}/км` : "—"}</span>
+                <span className="inline-flex items-center gap-1"><HeartPulse size={12} aria-label="Пульс" />{weekHrWeight ? `${Math.round(weekHrSeconds / weekHrWeight)} уд/мин` : "—"}</span>
+                {onMarkDeload && weekStart <= today && (
+                  <button type="button" aria-pressed={markedDeload} disabled={Boolean(pendingWeek) || syncBusy}
+                    onClick={() => toggleDeload(weekKey, !markedDeload)}
+                    className={`inline-flex min-h-8 items-center gap-1 rounded-md border px-2 text-[11px] disabled:opacity-50 ${markedDeload
+                      ? "border-[#5b887c] bg-[#25413b] text-[#b5e6d8]"
+                      : "border-[#45565d] text-[#bfcbcf] hover:bg-white/5"}`}>
+                    <Flag size={12} aria-hidden="true" />
+                    {pendingWeek === weekKey ? "Сохраняю…" : markedDeload ? "Разгрузочная" : "Отметить разгрузку"}
+                  </button>
                 )}
-              </span>
-              <span className="inline-flex items-center gap-1"><Gauge size={12} aria-label="Темп" />{weekKm ? `${fmtPace(weekSeconds / weekKm)}/км` : "—"}</span>
-              <span className="inline-flex items-center gap-1"><HeartPulse size={12} aria-label="Пульс" />{weekHrWeight ? `${Math.round(weekHrSeconds / weekHrWeight)} уд/мин` : "—"}</span>
+              </div>
+              {comparison && <WeekVolumeComparison comparison={comparison} previousDeload={previousDeload} />}
+              {labelError?.weekKey === weekKey && <p role="alert" className="text-xs text-rose-300">{labelError.message}</p>}
             </div>
             {week.days.map((date, weekday) => {
               const day = date.getDate();

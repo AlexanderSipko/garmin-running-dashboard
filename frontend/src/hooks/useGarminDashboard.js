@@ -77,6 +77,23 @@ function useGarminDashboard(publicDemo) {
     }
   };
 
+  async function markDeloadWeek(weekStart, deload) {
+    if (!publicDemo) {
+      const response = await fetch("/api/dashboard/week-label", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week_start: weekStart, deload }),
+      });
+      if (!response.ok) throw new Error("Не удалось сохранить отметку недели.");
+    }
+    setData((current) => {
+      const labels = { ...current.deload_weeks };
+      if (deload) labels[weekStart] = true;
+      else delete labels[weekStart];
+      return { ...current, deload_weeks: labels };
+    });
+  }
+
   const replaceActivity = useCallback((updated) => {
     setData((current) => {
       const activities = (current.activities ?? []).map((activity) =>
@@ -90,6 +107,8 @@ function useGarminDashboard(publicDemo) {
   return {
     activities: data.activities ?? [],
     replaceActivity,
+    deloadWeeks: data.deload_weeks,
+    markDeloadWeek,
     wellness: data.wellness,
     syncedAt: data?.connection?.synced_at || null,
     busy,

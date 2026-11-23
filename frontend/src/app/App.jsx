@@ -26,6 +26,8 @@ function Dashboard({ demo, account, planRevision }) {
         syncedAt={dashboard.syncedAt}
         planRevision={planRevision}
         wellness={dashboard.wellness}
+        deloadWeeks={dashboard.deloadWeeks}
+        onMarkDeload={dashboard.markDeloadWeek}
       />
     </main>
   );

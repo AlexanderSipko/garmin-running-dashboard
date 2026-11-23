@@ -24,7 +24,7 @@ const monthShortNames = Array.from({ length: 12 }, (_, month) =>
   new Date(2024, month, 1).toLocaleDateString("ru-RU", { month: "short" }).replace(".", "")
 );
 
-function CalendarPeriodExplorer({ activities, busy, error, onSync, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness, planRevision }) {
+function CalendarPeriodExplorer({ activities, busy, error, onSync, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness, planRevision, deloadWeeks, onMarkDeload }) {
   const detailCache = useRef(new Map()).current;
   const [yearsOpen, setYearsOpen] = useState(false);
   const availableYears = useMemo(() => {
@@ -565,6 +565,9 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, onActivityUpd
             selectedTypes={selectedTypes}
             selection={selection}
             onSelectDay={selectDay}
+            deloadWeeks={deloadWeeks}
+            onMarkDeload={onMarkDeload}
+            syncBusy={busy}
           />
         )}
 

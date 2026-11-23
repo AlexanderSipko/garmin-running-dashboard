@@ -228,6 +228,7 @@ def daily_coach_context(store: dict[str, Any], day: date) -> dict[str, Any]:
             "sessions": len(rows),
             "runs": len(runs),
             "strength_sessions": sum(is_strength(row) for row in rows),
+            "marked_deload": bool(store.get("deload_weeks", {}).get(start.isoformat())),
             "run_km": round(sum(float(row.get("distance_meters") or 0) for row in runs) / 1000, 1),
         }
 
@@ -412,7 +413,7 @@ def daily_cache_key(day: date, start: date, end: date) -> str:
 
 def coach_cache_revision(store: dict[str, Any]) -> list:
     active_week = store.get("training_week_active") or {}
-    return [store.get("synced_at"), store.get("wellness_synced_at"), store.get("runner_plan"), active_week.get("id")]
+    return [store.get("synced_at"), store.get("wellness_synced_at"), store.get("runner_plan"), active_week.get("id"), store.get("deload_weeks")]
 
 
 class WeekPlanRequest(BaseModel):
@@ -612,6 +613,30 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
 @app.get("/api/dashboard")
 def dashboard(days: int = Query(default=90, ge=30, le=3650)) -> dict[str, Any]:
     return account_dashboard(days)
+
+
+class WeekLabelRequest(BaseModel):
+    week_start: date
+    deload: bool
+
+
+@app.put("/api/dashboard/week-label")
+def update_week_label(request: WeekLabelRequest) -> dict[str, Any]:
+    if request.week_start.weekday() != 0:
+        raise HTTPException(422, "Дата начала недели должна быть понедельником.")
+
+    key = request.week_start.isoformat()
+
+    def update(store: dict[str, Any]) -> None:
+        labels = store.setdefault("deload_weeks", {})
+        if request.deload:
+            labels[key] = True
+        else:
+            labels.pop(key, None)
+        store.pop("coach_daily", None)
+
+    update_store(update)
+    return {"week_start": key, "deload": request.deload}
 
 
 @app.get("/api/dashboard/wellness")

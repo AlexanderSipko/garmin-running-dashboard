@@ -57,22 +57,41 @@ export function summarizeCalendar(activities) {
   return { daySummaries, monthSummaries, yearSummaries };
 }
 
-const comparisonWeeks = 6;
+function shiftDays(date, offset) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + offset);
+}
 
-export function weeklyVolumeComparison(daySummaries, weekStart, weekKm, historyStart) {
-  const firstDay = new Date(
-    weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() - comparisonWeeks * 7
-  );
-  if (!historyStart || firstDay < historyStart) return null;
+function weekKm(daySummaries, start) {
+  let km = 0;
+  for (let offset = 0; offset < 7; offset += 1) {
+    km += daySummaries.get(dayKey(shiftDays(start, offset)))?.runKm || 0;
+  }
+  return km;
+}
 
-  let previousKm = 0;
-  for (let offset = 0; offset < comparisonWeeks * 7; offset += 1) {
-    const day = new Date(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate() + offset);
-    previousKm += daySummaries.get(dayKey(day))?.runKm || 0;
+function percentChange(km, referenceKm) {
+  return referenceKm > 0 ? km / referenceKm - 1 : null;
+}
+
+export function weeklyVolumeComparison(daySummaries, weekStart, totalKm, historyStart) {
+  const previousMonday = shiftDays(weekStart, -7);
+  const sixWeeksAgo = shiftDays(weekStart, -42);
+  const previousKm = historyStart && previousMonday >= historyStart
+    ? weekKm(daySummaries, previousMonday)
+    : null;
+  let typicalKm = null;
+
+  if (historyStart && sixWeeksAgo >= historyStart) {
+    const weeks = Array.from({ length: 6 }, (_, index) => weekKm(daySummaries, shiftDays(sixWeeksAgo, index * 7)));
+    weeks.sort((first, second) => first - second);
+    typicalKm = (weeks[2] + weeks[3]) / 2;
   }
 
-  const averageKm = previousKm / comparisonWeeks;
-  if (averageKm <= 0) return null;
-  const change = Math.round((weekKm / averageKm - 1) * 100);
-  return { averageKm, change: change === 0 ? 0 : change };
+  return {
+    previousMonday,
+    previousKm,
+    previousChange: percentChange(totalKm, previousKm),
+    typicalKm,
+    typicalChange: percentChange(totalKm, typicalKm),
+  };
 }

@@ -126,6 +126,7 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
             "this_week_runs": len(this_week),
         },
         "weekly": weekly,
+        "deload_weeks": store.get("deload_weeks", {}),
         "activities": activities[:5000],
         "wellness": {
             "years": yearly_wellness,
