@@ -1,6 +1,7 @@
 import { Heart, HeartPulse, Scale, Moon, Wind } from "lucide-react";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { hasMetricValue, hasWellnessForDay, localDateKey } from "../lib/wellnessDates";
+import TrainingReadinessCard from "./TrainingReadinessCard";
 
 const metrics = [
   { key: "sleep", label: "Сон", unit: "ч", icon: Moon, color: "sleep", iconClass: "text-[#b9a4ff]", digits: 1 },
@@ -176,7 +177,7 @@ function RecentWellness({ wellness }) {
   );
 }
 
-function YearHealthPanel({ wellness }) {
+function YearHealthPanel({ wellness, syncedAt, publicDemo }) {
   return (
     <aside className={[
       "year-health-panel min-w-0 self-start min-[761px]:sticky min-[761px]:top-0 min-[761px]:max-h-dvh min-[761px]:overflow-y-auto py-[14px] px-[12px]",
@@ -185,6 +186,9 @@ function YearHealthPanel({ wellness }) {
       "max-[760px]:[grid-column:1_/_-1]",
       "max-[760px]:[border-top:1px_solid_var(--border)] max-[760px]:[border-left:0]",
     ].join(" ")} aria-label="Показатели здоровья за неделю">
+      {!publicDemo && wellness && (
+        <TrainingReadinessCard syncedAt={syncedAt} wellnessSyncedAt={wellness.synced_at} />
+      )}
       <RecentWellness wellness={wellness} />
     </aside>
   );

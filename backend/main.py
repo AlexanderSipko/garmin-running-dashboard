@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from accounts import account_routes, check_origin, decrypt
 from coach import RunningCoach
+from coach_plan_dialog import TRAINING_TABLE, confirmed_plan_reply, is_plan_request
 from coach_tools import GarminCoachTools, activity_pace
 from dashboard_data import build_dashboard, merge_activities, monday_of, parse_date
 from providers.gigachat import GigaChatClient
@@ -25,7 +26,7 @@ from training_week import WeekPreferences, activity_kind, build_week_draft, week
 
 database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
-COACH_CONTEXT_VERSION = 7
+COACH_CONTEXT_VERSION = 8
 COACH_CHAT_TURNS = 60
 
 
@@ -42,6 +43,15 @@ def update_store(update: Callable[[dict[str, Any]], None]) -> None:
 
 def personal_coach() -> RunningCoach:
     return RunningCoach(decrypt(database.keys(account_id.get())[1]))
+
+
+def account_coach_tools(store: dict[str, Any]) -> GarminCoachTools:
+    user_id = account_id.get()
+    return GarminCoachTools(
+        store,
+        read_detail=lambda activity_id: database.read_activity_detail(user_id, activity_id),
+        garmin_key=lambda: decrypt(database.keys(user_id)[0]),
+    )
 
 
 def account_dashboard(days: int) -> dict[str, Any]:
@@ -148,6 +158,7 @@ class CoachPeriodRequest(BaseModel):
 class CoachChatRequest(CoachPeriodRequest):
     question: str = Field(min_length=1, max_length=1200)
     summary: str | None = Field(default=None, max_length=1200)
+    today: date | None = None
 
 
 def activities_between(rows: list[dict[str, Any]], start: date, end: date) -> list[dict[str, Any]]:
@@ -273,6 +284,7 @@ def analyze_period(
     daily: bool = False,
     focus_date: date | None = None,
     chat_summary: str | None = None,
+    plan_day: date | None = None,
 ) -> dict[str, Any]:
     if end < start:
         raise HTTPException(status_code=422, detail="Конец периода раньше его начала.")
@@ -299,12 +311,7 @@ def analyze_period(
     tools = None
     conversation = []
     if question:
-        user_id = account_id.get()
-        tools = GarminCoachTools(
-            store,
-            read_detail=lambda activity_id: database.read_activity_detail(user_id, activity_id),
-            garmin_key=lambda: decrypt(database.keys(user_id)[0]),
-        )
+        tools = account_coach_tools(store)
         conversation = store.get("coach_chat_history", [])[-(4 if chat_summary else 6):]
         if chat_summary:
             conversation = [{"role": "assistant", "content": chat_summary}, *conversation]
@@ -343,7 +350,7 @@ def analyze_period(
             conversation=conversation,
             daily_context=daily_coach_context(store, reference_day) if daily else None,
             runner_plan=plan_context(store.get("runner_plan"), reference_day),
-            training_week=week_context(store.get("training_week_active"), rows, reference_day),
+            training_week=week_context(store.get("training_week_active"), rows, plan_day or reference_day),
             tools=tools,
         )
     except GigaChatError as exc:
@@ -564,16 +571,33 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
     question = request.question.strip()
     if not question:
         raise HTTPException(422, "Напиши вопрос консультанту.")
-    result = analyze_period(
-        request.start_date,
-        request.end_date,
-        request.previous_start_date,
-        request.previous_end_date,
-        question=question,
-        daily=request.daily,
-        focus_date=request.focus_date,
-        chat_summary=request.summary,
-    )
+    today = request.today or date.today()
+    validate_plan_day(today)
+
+    def reply_from_plan() -> str:
+        store = read_store()
+        return confirmed_plan_reply(store.get("training_week_active"), store.get("activities", []), today)
+
+    if is_plan_request(question):
+        result = {
+            "answer": reply_from_plan(),
+            "model": "training-week",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        }
+    else:
+        result = analyze_period(
+            request.start_date,
+            request.end_date,
+            request.previous_start_date,
+            request.previous_end_date,
+            question=question,
+            daily=request.daily,
+            focus_date=request.focus_date,
+            chat_summary=request.summary,
+            plan_day=today,
+        )
+        if TRAINING_TABLE.search(result["answer"]):
+            result["answer"] = reply_from_plan()
 
     focus_day = (request.focus_date or request.start_date).isoformat()
 
@@ -639,6 +663,16 @@ def dashboard_wellness_day(day: date) -> dict[str, Any]:
         if points:
             metrics[name] = points
     return {"metrics": metrics, "synced_at": store.get("wellness_synced_at")}
+
+
+@app.get("/api/dashboard/readiness")
+def dashboard_readiness(day: date) -> dict[str, Any]:
+    validate_plan_day(day)
+    tools = account_coach_tools(read_store())
+    result = tools.call("get_garmin_recovery", {"day": day.isoformat()})
+    if "error" in result:
+        raise HTTPException(503, "Показатели восстановления временно недоступны.")
+    return result
 
 
 @app.get("/api/activities/{activity_id}/splits")

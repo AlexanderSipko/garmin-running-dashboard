@@ -175,6 +175,7 @@ function useRunningCoach({
     try {
       const result = await postJson("/api/coach/chat", {
         ...requestPeriod,
+        today: toDateString(new Date()),
         question: cleanQuestion,
         summary: summary ? summary.slice(0, 1200) : null,
       });

@@ -584,7 +584,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, onActivityUpd
 
       </section>
 
-      <YearHealthPanel wellness={wellness} />
+      <YearHealthPanel wellness={wellness} syncedAt={syncedAt} publicDemo={publicDemo} />
     </main>
   );
 }

@@ -1,6 +1,7 @@
 """Private, read-only Garmin tools exposed to the consultant over MCP."""
 
 import asyncio
+import json
 from datetime import date, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -11,6 +12,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 
 from dashboard_data import parse_date
 from garmin_api import get_running_activity_splits, get_wellness_series
+from readiness import recovery_indicators
 
 
 def pace_label(seconds: int | None) -> str | None:
@@ -34,6 +36,11 @@ class GarminCoachTools:
 
     def __init__(self, store, read_detail, garmin_key):
         self.server = FastMCP("Garmin consultant tools")
+
+        @self.server.tool()
+        def get_garmin_recovery(day: date) -> dict:
+            """Read saved sleep, resting HR, 7-day average HRV and recorded running volume. No Garmin readiness score."""
+            return recovery_indicators(store, day)
 
         @self.server.tool()
         def get_garmin_period(start_date: date, end_date: date) -> dict:
@@ -161,8 +168,17 @@ class GarminCoachTools:
                 self.server, read_timeout_seconds=timedelta(seconds=18)
             ) as session:
                 result = await session.call_tool(name, arguments)
-                if result.isError or result.structuredContent is None:
-                    return {"error": "Не удалось получить данные инструмента."}
-                return result.structuredContent
+                if not result.isError:
+                    if result.structuredContent is not None:
+                        return result.structuredContent
+                    # Some MCP SDK versions serialize a plain dict as a JSON text block.
+                    if len(result.content) == 1 and result.content[0].type == "text":
+                        try:
+                            payload = json.loads(result.content[0].text)
+                        except ValueError:
+                            payload = None
+                        if isinstance(payload, dict):
+                            return payload
+                return {"error": "Не удалось получить данные инструмента."}
 
         return asyncio.run(call_tool())
