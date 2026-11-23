@@ -8,6 +8,7 @@ import {
   HeartPulse,
   Watch,
 } from "lucide-react";
+import { localDateKey } from "../lib/wellnessDates";
 import { fmtPace } from "../lib/format";
 import { dayKey, getActivityCategory, getActivityDate, summarizeCalendar } from "../lib/calendarAnalytics";
 import DaySummary from "./DaySummary";
@@ -106,16 +107,19 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, onActivityUpd
       const date = new Date(chartYear, chartMonth, day);
       const summary = daySummaries.get(dayKey(date));
       const weekday = date.getDay();
+      const monday = new Date(chartYear, chartMonth, day - (weekday + 6) % 7);
+      const weekKey = localDateKey(monday);
       return {
         label: String(day),
         weekend: weekday === 0 || weekday === 6,
+        deloadWeek: deloadWeeks?.[weekKey] ? weekKey : null,
         runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,
         pace: summary?.runKm ? summary.runSeconds / summary.runKm : null,
         avgHr: summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
         strengthCount: summary?.strengthCount || 0,
       };
     });
-  }, [chartMonth, chartYear, daySummaries]);
+  }, [chartMonth, chartYear, daySummaries, deloadWeeks]);
 
   const yearChartData = useMemo(() => {
     const currentDate = new Date();

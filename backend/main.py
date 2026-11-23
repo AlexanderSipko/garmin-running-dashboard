@@ -21,11 +21,11 @@ from providers.gigachat import GigaChatError
 from settings import settings
 from runner_plan import plan_context
 from store import Database
-from training_week import activity_kind, draft_start, plan_sessions, recent_training_load, week_context, week_progress
+from training_week import WeekPreferences, activity_kind, build_week_draft, week_context, week_progress
 
 database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
-COACH_CONTEXT_VERSION = 6
+COACH_CONTEXT_VERSION = 7
 COACH_CHAT_TURNS = 60
 
 
@@ -420,6 +420,10 @@ class WeekPlanRequest(BaseModel):
     day: date
 
 
+class WeekDraftRequest(WeekPlanRequest):
+    preferences: WeekPreferences = Field(default_factory=WeekPreferences)
+
+
 class WeekApprovalRequest(WeekPlanRequest):
     draft_id: str = Field(min_length=1, max_length=36)
 
@@ -439,6 +443,7 @@ def training_week_state(store: dict[str, Any], day: date) -> dict[str, Any]:
         "active": week_progress(active, activities, day) if active else None,
         "draft": week_progress(draft, [], day) if draft else None,
         "synced_at": store.get("synced_at"),
+        "preferences": store.get("training_week_preferences"),
     }
 
 
@@ -449,52 +454,26 @@ def get_training_week(day: date) -> dict[str, Any]:
 
 
 @app.post("/api/coach/week")
-def propose_training_week(request: WeekPlanRequest) -> dict[str, Any]:
+def propose_training_week(request: WeekDraftRequest) -> dict[str, Any]:
     day = request.day
     validate_plan_day(day)
-    store = read_store()
-    state = training_week_state(store, day)
-    if state["active"] and not state["active"]["expired"]:
-        raise HTTPException(409, "Сначала заверши текущий план недели.")
-    if state["draft"]:
-        return state
+    preferences = request.preferences.model_dump(mode="json")
 
-    coach = personal_coach()
-    if not coach.configured:
-        raise HTTPException(409, "Добавь ключ GigaChat в настройках аккаунта.")
-    activities = store.get("activities", [])
-    load = recent_training_load(activities, day)
-    if not load["max_week_km"]:
-        raise HTTPException(409, "Сначала синхронизируй недавние пробежки из Garmin.")
-    start = draft_start(activities, day)
-    revision = coach_cache_revision(store)
-    try:
-        proposal = coach.propose_week({
-            "starts_on": start.isoformat(),
-            "runner_plan": plan_context(store.get("runner_plan"), start),
-            "recent_running_load": load,
-            "previous_training_plan": week_context(store.get("training_week_active"), activities, day),
-            "recovery": daily_coach_context(store, day),
-            "recent_user_notes": [
-                turn["content"][:200] for turn in store.get("coach_chat_history", [])
-                if turn.get("role") == "user" and turn.get("focus_date") == day.isoformat()
-            ][-2:],
-        })
-        sessions = plan_sessions(proposal, start, load)
-    except GigaChatError as exc:
-        logger.warning("Training week provider error: status=%s", exc.status_code)
-        if exc.status_code == 429:
-            raise HTTPException(429, "GigaChat ограничил запросы. Попробуй позже.") from None
-        raise HTTPException(502, "Не удалось получить план от GigaChat.") from None
-    except ValueError:
-        raise HTTPException(502, "Предложенный план не прошёл проверку нагрузки. Попробуй сформировать его ещё раз.") from None
+    def save_draft(store: dict[str, Any]) -> None:
+        state = training_week_state(store, day)
+        if state["active"] and not state["active"]["expired"]:
+            raise HTTPException(409, "Сначала заверши текущий план недели.")
+        if state["draft"]:
+            return
+        try:
+            draft = build_week_draft(
+                store.get("activities", []), store.get("runner_plan") or {}, day, request.preferences, store.get("deload_weeks", {}),
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
 
-    def save_draft(current: dict[str, Any]) -> None:
-        if coach_cache_revision(current) != revision:
-            raise HTTPException(409, "Данные или цель изменились. Сформируй план заново.")
-        existing = training_week_state(current, day)["draft"]
-        if not existing:
-            current["training_week_draft"] = {"id": uuid4().hex, "rationale": proposal.rationale, "sessions": sessions}
+        store["training_week_preferences"] = preferences
+        store["training_week_draft"] = {"id": uuid4().hex, **draft}
 
     update_store(save_draft)
     return training_week_state(read_store(), day)
@@ -633,6 +612,12 @@ def update_week_label(request: WeekLabelRequest) -> dict[str, Any]:
             labels[key] = True
         else:
             labels.pop(key, None)
+        draft = store.get("training_week_draft")
+        if draft and any(
+            monday_of(date.fromisoformat(session["date"])) == request.week_start
+            for session in draft["sessions"]
+        ):
+            store.pop("training_week_draft", None)
         store.pop("coach_daily", None)
 
     update_store(update)

@@ -5,6 +5,7 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -33,6 +34,7 @@ function CombinedTooltip({ active, label, payload, showRunning, showStrength }) 
   return (
     <div className="period-chart-tooltip grid gap-[3px] py-[7px] px-[9px] [border:1px_solid_#46545b] rounded-[8px] [background:#202a30f2] [box-shadow:0_6px_16px_#00000038] text-[color:#dce5e9] text-[10px]">
       <b>{label}</b>
+      {point.deloadWeek && <span className="text-[#aee2d4]">Разгрузочная неделя</span>}
       {showRunning && runningMetrics.map((metric) => (
         <span className="combined-tooltip-row flex items-center gap-[6px] [&_i]:w-[7px] [&_i]:h-[7px] [&_i]:rounded-[50%]" key={metric.key}>
           <i className={`h-[7px] w-[7px] rounded-full ${metric.dotClass}`} />
@@ -124,7 +126,7 @@ function MonthAxisTick({ x, y, payload, days }) {
         <line x1={x - 3} x2={x + 3} y1={y - 4} y2={y - 4} stroke="#ffc17f" strokeWidth={2.5} strokeLinecap="round" />
       )}
       <text x={x} y={y} dy={9} textAnchor="middle"
-        fill={day.weekend ? "#ffd1a5" : "#aebbc0"}
+        fill={day.weekend ? "#ffd1a5" : day.deloadWeek ? "#aee2d4" : "#aebbc0"}
         className={day.weekend
           ? "text-[12px] font-extrabold max-[620px]:text-[9px]"
           : "text-[11px] font-medium max-[620px]:hidden"}>
@@ -140,6 +142,15 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, periodSumm
   const showStrengthBars = showStrength && isDailyChart;
   const showCombinedChart = showRunning || showStrengthBars;
   const monthMetrics = [];
+  const deloadRanges = new Map();
+  if (isDailyChart) {
+    for (const point of data) {
+      if (!point.deloadWeek) continue;
+      const range = deloadRanges.get(point.deloadWeek);
+      if (range) range.end = point.label;
+      else deloadRanges.set(point.deloadWeek, { start: point.label, end: point.label });
+    }
+  }
 
   if (isDailyChart && periodSummary) {
     if (showRunning) {
@@ -177,6 +188,11 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, periodSumm
                 <YAxis yAxisId="heart" hide orientation="right" domain={["dataMin - 8", "dataMax + 8"]} />
                 <Tooltip content={<CombinedTooltip showRunning={showRunning} showStrength={showStrengthBars} />} cursor={{ stroke: "#ffffff35", strokeDasharray: "3 3" }} />
                 {showStrengthBars && <YAxis yAxisId="strength" hide orientation="right" allowDecimals={false} domain={[0, "dataMax + 1"]} />}
+                {[...deloadRanges].map(([week, range]) => (
+                  <ReferenceArea key={week} x1={range.start} x2={range.end}
+                    yAxisId={showRunning ? "distance" : "strength"} ifOverflow="visible"
+                    fill="#72c8b3" fillOpacity={0.16} strokeOpacity={0} />
+                ))}
                 {showRunning && (isDailyChart
                   ? <Bar yAxisId="distance" dataKey="runKm" name="Бег, км" fill="#efa85f" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
                   : <Area yAxisId="distance" type="monotone" dataKey="runKm" name="Дистанция" stroke="#efa85f" strokeWidth={2.5} fill="url(#combined-fill-runKm)" connectNulls={false} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} isAnimationActive={false} />)}
@@ -186,6 +202,11 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, periodSumm
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          {deloadRanges.size > 0 && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#aee2d4]">
+              <span className="size-2.5 rounded-sm bg-[#72c8b3]/50" aria-hidden="true" /> Разгрузочная неделя
+            </p>
+          )}
         </article>
       )}
 

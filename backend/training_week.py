@@ -1,33 +1,30 @@
 """Draft and track a seven-day running plan for a single account."""
 
 from datetime import date, timedelta
+from itertools import combinations
+from statistics import median
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, model_validator
 
 from dashboard_data import monday_of, parse_date
 
-Kind = Literal["rest", "easy", "long", "quality", "strength"]
-RUN_KINDS = {"easy", "long", "quality"}
+RUN_KINDS = {"easy", "long", "quality", "race"}
 
 
-class PlannedSession(BaseModel):
-    kind: Kind
-    distance_km: float | None = Field(default=None, gt=0, le=100)
-    instruction: str = Field(min_length=1, max_length=160)
+class WeekPreferences(BaseModel):
+    available_days: set[Literal[0, 1, 2, 3, 4, 5, 6]] = Field(default_factory=lambda: set(range(7)), min_length=1)
+    run_days: int | None = Field(default=None, ge=1, le=6)
+    long_day: Literal[0, 1, 2, 3, 4, 5, 6] | None = None
+    effort: Literal["usual", "lighter"] = "usual"
 
-    @field_validator("instruction")
-    @classmethod
-    def clean_instruction(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Нужен краткий ориентир для занятия")
-        return value
-
-
-class WeekProposal(BaseModel):
-    rationale: str = Field(min_length=1, max_length=320)
-    sessions: list[PlannedSession] = Field(min_length=7, max_length=7)
+    @model_validator(mode="after")
+    def validate_schedule(self):
+        if self.run_days is not None and self.run_days > len(self.available_days):
+            raise ValueError("Число пробежек превышает число выбранных дней.")
+        if self.long_day is not None and self.long_day not in self.available_days:
+            raise ValueError("Выбери день для длительной из доступных дней.")
+        return self
 
 
 def activity_kind(row: dict) -> str | None:
@@ -43,13 +40,19 @@ def draft_start(activities: list[dict], today: date) -> date:
 
 
 def recent_training_load(activities: list[dict], today: date) -> dict:
-    start = monday_of(today) - timedelta(weeks=4)
-    weekly_km = {}
-    weekly_count = {}
+    current_monday = monday_of(today)
+    start = current_monday - timedelta(weeks=6)
+    first_date = None
+    weekly_km: dict[date, float] = {}
+    weekly_count: dict[date, int] = {}
     longest_km = 0.0
     for row in activities:
         day = parse_date(row.get("start_time"))
-        if day is None or not start <= day <= today or activity_kind(row) != "run":
+        if day is None or day > today:
+            continue
+        if first_date is None or day < first_date:
+            first_date = day
+        if day < start or activity_kind(row) != "run":
             continue
         km = float(row.get("distance_meters") or 0) / 1000
         if km <= 0:
@@ -59,36 +62,86 @@ def recent_training_load(activities: list[dict], today: date) -> dict:
         weekly_count[monday] = weekly_count.get(monday, 0) + 1
         longest_km = max(longest_km, km)
 
+    completed = [start + timedelta(weeks=index) for index in range(6)]
+    covered = [week for week in completed if first_date is not None and week >= first_date]
+    if not covered:
+        covered = sorted(weekly_km)
+    typical_km = median(weekly_km.get(week, 0) for week in covered) if covered else 0
+    typical_runs = median(weekly_count.get(week, 0) for week in covered) if covered else 0
     return {
-        "weeks": [
-            {"week_of": week.isoformat(), "km": round(weekly_km.get(week, 0), 1), "runs": weekly_count.get(week, 0)}
-            for week in (start + timedelta(weeks=offset) for offset in range(5))
-        ],
-        "max_week_km": round(max(weekly_km.values(), default=0), 1),
-        "max_run_km": round(longest_km, 1),
+        "typical_km": typical_km,
+        "typical_runs": typical_runs,
+        "longest_km": longest_km,
+        "last_run_week": max(weekly_km, default=None),
     }
 
 
-def plan_sessions(proposal: WeekProposal, start: date, load: dict) -> list[dict]:
-    planned_km = 0.0
-    quality_days = []
-    sessions = []
-    for offset, session in enumerate(proposal.sessions):
-        if session.kind in RUN_KINDS:
-            if session.distance_km is None or session.distance_km > load["max_run_km"]:
-                raise ValueError("Дистанция занятия выходит за рамки недавней нагрузки.")
-            planned_km += session.distance_km
-        elif session.distance_km is not None:
-            raise ValueError("Дистанция задаётся только для бега.")
-        if session.kind in {"quality", "long"}:
-            quality_days.append(offset)
-        sessions.append({"date": (start + timedelta(days=offset)).isoformat(), **session.model_dump()})
+def spread_days(available: list[int], count: int, preferred: int | None) -> tuple[int, ...]:
+    schedules = (
+        group for group in combinations(available, count)
+        if preferred is None or preferred in group
+    )
 
-    if planned_km > load["max_week_km"] + 0.001 or not any(day.kind == "rest" for day in proposal.sessions):
-        raise ValueError("План выходит за рамки недавнего объёма или не оставляет дня отдыха.")
-    if len(quality_days) > 2 or any(b - a < 2 for a, b in zip(quality_days, quality_days[1:])):
-        raise ValueError("В плане слишком много нагрузочных занятий подряд.")
-    return sessions
+    def spacing(group: tuple[int, ...]) -> tuple:
+        gaps = [second - first for first, second in zip(group, (*group[1:], group[0] + 7))]
+        return min(gaps), -sum(gap * gap for gap in gaps), -group[0]
+
+    return max(schedules, key=spacing)
+
+
+def build_week_draft(
+    activities: list[dict], goal: dict, day: date, preferences: WeekPreferences, deload_weeks: dict,
+) -> dict:
+    load = recent_training_load(activities, day)
+    if not load["typical_km"] or load["last_run_week"] < monday_of(day) - timedelta(weeks=2):
+        raise ValueError("Не хватает недавних пробежек для расчёта. Синхронизируй Garmin и обсуди возвращение к бегу с консультантом.")
+
+    start = draft_start(activities, day)
+    dates = [start + timedelta(days=index) for index in range(7)]
+    race_day = parse_date(goal.get("race_date"))
+    race_offset = dates.index(race_day) if race_day in dates else None
+    close_to_race = race_day is not None and 0 <= (race_day - start).days <= 14
+    marked_deload = any(deload_weeks.get(monday_of(scheduled_day).isoformat()) for scheduled_day in dates)
+    lighter = marked_deload or preferences.effort == "lighter" or goal.get("stage") in {"taper", "recovery"} or close_to_race
+
+    available = [
+        index for index, scheduled_day in enumerate(dates)
+        if scheduled_day.weekday() in preferences.available_days
+        and (race_offset is None or abs(index - race_offset) > 1)
+    ]
+    usual_count = max(1, int(load["typical_runs"]))
+    requested = preferences.run_days or usual_count
+    count = min(requested, usual_count, len(available), 6 - (race_offset is not None))
+    preferred = next((index for index in available if dates[index].weekday() == preferences.long_day), None)
+    run_days = spread_days(available, count, preferred) if count else ()
+    long_day = (preferred if preferred is not None else run_days[-1]) if count >= 2 and not lighter else None
+
+    target_km = load["typical_km"] * (0.75 if lighter else 1)
+    weight = count + (0.3 if long_day is not None else 0)
+    sessions = []
+    for index, scheduled_day in enumerate(dates):
+        session = {"date": scheduled_day.isoformat(), "kind": "rest", "distance_km": None, "instruction": "Отдых от бега."}
+        if index in run_days:
+            share = 1.3 if index == long_day else 1
+            km = int(min(load["longest_km"], target_km * share / weight) * 10) / 10
+            if km > 0:
+                session.update({
+                    "kind": "long" if index == long_day else "easy",
+                    "distance_km": km,
+                    "instruction": "Длительная в разговорном темпе." if index == long_day else "Лёгкий бег в разговорном темпе.",
+                })
+        if index == race_offset:
+            session.update(kind="race", instruction="Запланированный старт. Дистанция и темп по твоему плану на забег.")
+        sessions.append(session)
+
+    reason = f"Ориентир — типичный объём {load['typical_km']:.1f} км. Учтены доступные дни."
+    if marked_deload:
+        reason += " Объём снижен с учётом отметки разгрузки в календаре."
+    elif lighter:
+        reason += " Для облегчённой недели объём снижен."
+    if count < requested:
+        reason += " Пробежек меньше запроса с учётом привычной частоты и доступных дней."
+    return {"rationale": reason, "sessions": sessions, "lighter": lighter, "marked_deload": marked_deload}
 
 
 def week_progress(plan: dict, activities: list[dict], today: date) -> dict:
@@ -103,6 +156,7 @@ def week_progress(plan: dict, activities: list[dict], today: date) -> dict:
 
     tracked = []
     actual_run_km = 0.0
+    planned_to_date_km = 0.0
     for session in sessions:
         day = date.fromisoformat(session["date"])
         rows = by_day.get(session["date"], [])
@@ -113,22 +167,38 @@ def week_progress(plan: dict, activities: list[dict], today: date) -> dict:
         actual_run_km += run_km
         expected = "run" if session["kind"] in RUN_KINDS else session["kind"]
 
+        target_km = session.get("distance_km")
+        if day <= today and target_km:
+            planned_to_date_km += target_km
+
         if day > today:
             status = "upcoming"
         elif expected == "rest":
             status = "rest_done" if not rows and day < today else "rest_activity" if rows else "today"
         elif expected in kinds:
             status = "matched"
+        elif rows:
+            status = "different_activity"
         else:
             status = "not_recorded" if day < today else "today"
 
-        tracked.append({**session, "status": status, "actual_km": round(run_km, 1) if run_km else None})
+        distance_status = None
+        if status == "matched" and target_km and run_km:
+            difference = run_km - target_km
+            tolerance = target_km * 0.05
+            distance_status = "below" if difference < -tolerance else "above" if difference > tolerance else "on_target"
+
+        tracked.append({
+            **session, "status": status, "actual_km": round(run_km, 1) if run_km else None,
+            "distance_status": distance_status,
+        })
 
     return {
         **plan,
         "sessions": tracked,
         "planned_km": round(sum(day.get("distance_km") or 0 for day in sessions), 1),
         "actual_run_km": round(actual_run_km, 1),
+        "planned_to_date_km": round(planned_to_date_km, 1),
         "matched_sessions": sum(day["status"] == "matched" for day in tracked),
         "planned_sessions": sum(day["kind"] != "rest" for day in sessions),
         "expired": today > last,
@@ -139,15 +209,24 @@ def week_context(plan: dict | None, activities: list[dict], today: date) -> dict
     if plan is None:
         return None
     progress = week_progress(plan, activities, today)
+    next_session = next((
+        day for day in progress["sessions"]
+        if day["kind"] != "rest" and day["status"] in {"upcoming", "today", "different_activity"}
+        and day["date"] >= today.isoformat()
+    ), None)
     return {
+        "next_session": {key: next_session[key] for key in ("date", "kind", "distance_km")} if next_session else None,
         "range": [progress["sessions"][0]["date"], progress["sessions"][-1]["date"]],
         "expired": progress["expired"],
+        "lighter": progress.get("lighter"),
+        "marked_deload": progress.get("marked_deload"),
         "planned_km": progress["planned_km"],
         "actual_run_km": progress["actual_run_km"],
+        "planned_to_date_km": progress["planned_to_date_km"],
         "matched_sessions": progress["matched_sessions"],
         "planned_sessions": progress["planned_sessions"],
         "days": [
-            {key: value for key, value in day.items() if key in {"date", "kind", "distance_km", "status", "actual_km"}}
+            {key: value for key, value in day.items() if key in {"date", "kind", "distance_km", "status", "actual_km", "distance_status"}}
             for day in progress["sessions"]
         ],
     }
