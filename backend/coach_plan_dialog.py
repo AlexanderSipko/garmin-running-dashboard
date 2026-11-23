@@ -22,6 +22,7 @@ MOVE_REQUEST = re.compile(
 )
 MOVE_DATES = re.compile(r"\b(?:с|со)\s+(.+?)\s+на\s+([^,;!?]+)")
 SESSION_LABELS = {
+    "recovery": "восстановительный бег", "tempo": "темповый бег", "intervals": "интервалы",
     "easy": "лёгкий бег", "long": "длительный бег", "quality": "интенсивная тренировка",
     "race": "забег", "strength": "силовая тренировка",
 }
@@ -123,6 +124,8 @@ def confirmed_plan_reply(plan: dict | None, activities: list[dict], today: date)
         distance = next_session.get("distance_km")
         km = f", {distance:g} км".replace(".", ",") if distance else ""
         lines.append(f"Ближайшее занятие: {WEEKDAYS[day.weekday()]} {day:%d.%m}, {label}{km}.")
+        if next_session.get("instruction"):
+            lines.append(next_session["instruction"])
     else:
         lines.append("Следующих занятий в этом плане пока нет.")
     if week["lighter"] or week["marked_deload"]:

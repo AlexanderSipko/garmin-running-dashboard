@@ -331,6 +331,14 @@ def analyze_period(
         "previous_strength": strength_summary(previous) if previous is not None else None,
         "last_sync_at": store.get("synced_at"),
     }
+    if start == end:
+        confirmed_weeks = [store.get("training_week_active"), *reversed(store.get("training_week_history", []))]
+        selected_session = next((
+            session for plan in confirmed_weeks if plan
+            for session in plan["sessions"] if session["date"] == start.isoformat()
+        ), None)
+        if selected_session:
+            activity_summary["selected_day_plan"] = selected_session
     if question:
         month_start = reference_day.replace(day=1)
         month_rows = activities_between(rows, month_start, reference_day)
@@ -453,6 +461,8 @@ class WeekMoveRequest(WeekEditRequest):
 class WeekDistanceRequest(WeekEditRequest):
     session_date: date
     distance_km: float = Field(ge=0.1, allow_inf_nan=False)
+    kind: str | None = Field(default=None, max_length=20)
+    instruction: str | None = Field(default=None, max_length=500)
 
 
 def validate_plan_day(day: date) -> None:
@@ -560,6 +570,7 @@ def move_training_week(request: WeekMoveRequest) -> dict[str, Any]:
 def change_training_week_distance(request: WeekDistanceRequest) -> dict[str, Any]:
     return edit_training_week(request, lambda plan, activities: change_week_distance(
         plan, activities, request.day, request.session_date, request.distance_km,
+        kind=request.kind, instruction=request.instruction,
     ))
 
 

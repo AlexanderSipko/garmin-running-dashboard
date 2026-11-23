@@ -12,6 +12,7 @@ import { localDateKey } from "../lib/wellnessDates";
 import { fmtPace } from "../lib/format";
 import { dayKey, getActivityCategory, getActivityDate, summarizeCalendar } from "../lib/calendarAnalytics";
 import DaySummary from "./DaySummary";
+import DayTrainingPlan from "./DayTrainingPlan";
 import MonthDayCalendar from "./MonthDayCalendar";
 import ActivityDetail from "./ActivityDetail";
 import RunningCoachPanel from "./RunningCoachPanel";
@@ -157,6 +158,9 @@ function CalendarPeriodExplorer({
   const dayRuns = selection.type === "day"
     ? periodActivities.filter((activity) => getActivityCategory(activity) === "running")
     : [];
+  const dayPlan = selection.type === "day"
+    ? plannedSessions?.find(({ date }) => date === localDateKey(periodStart))
+    : null;
 
   return (
     <main className="period-explorer grid grid-cols-[minmax(205px,_245px)_minmax(0,_1fr)_minmax(270px,_300px)] min-h-screen max-[760px]:grid-cols-[minmax(0,_1fr)] max-[760px]:overflow-x-clip">
@@ -582,8 +586,14 @@ function CalendarPeriodExplorer({
 
         {selection.type === "day" && (
           <>
-            {(publicDemo || dayRuns.length !== 1) && <DaySummary activities={dayRuns} date={periodStart} />}
-            {!publicDemo && <ActivityDetail date={periodStart} activities={dayRuns} detailCache={detailCache} onActivityUpdated={onActivityUpdated} />}
+            {dayPlan && <DayTrainingPlan key={dayPlan.date} session={dayPlan}
+              hasActivities={periodActivities.length > 0} onPlanChanged={onTrainingWeekChanged} />}
+            {(!dayPlan || dayRuns.length > 0) && (
+              <>
+                {(publicDemo || dayRuns.length !== 1) && <DaySummary activities={dayRuns} date={periodStart} />}
+                {!publicDemo && <ActivityDetail date={periodStart} activities={dayRuns} detailCache={detailCache} onActivityUpdated={onActivityUpdated} />}
+              </>
+            )}
           </>
         )}
 

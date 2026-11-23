@@ -15,9 +15,12 @@ function replacePlannedSessions(dashboard, week) {
   return {
     ...dashboard,
     planned_sessions: [
-      ...(dashboard.planned_sessions ?? []).filter((session) => !dates.has(session.date)),
+      ...(dashboard.planned_sessions ?? []).filter((session) => !dates.has(session.date))
+        .map((session) => ({ ...session, current_plan: false })),
       ...week.sessions.filter(({ kind }) => kind !== "rest")
-        .map(({ date, kind, distance_km }) => ({ date, kind, distance_km })),
+        .map(({ date, kind, distance_km, instruction }) => ({
+          date, kind, distance_km, instruction, plan_id: week.id, revision: week.revision ?? 0, current_plan: true,
+        })),
     ],
   };
 }

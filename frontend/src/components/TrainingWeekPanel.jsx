@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, CalendarSync, LoaderCircle, Pencil } from "lucide-react";
 import { localDateKey } from "../lib/wellnessDates";
+import PlannedSessionEditor, { isPlannedRun, requestWeek, sessionLabels as kinds } from "./PlannedSessionEditor";
 
-const kinds = {
-  rest: "Отдых", easy: "Лёгкий бег", long: "Длительная", quality: "Качественная", strength: "Силовая", race: "Запланированный старт",
-};
 const statuses = {
   upcoming: "Впереди",
   today: "Сегодня",
@@ -77,37 +75,10 @@ function WeekPreferenceFields({ value, onChange, disabled }) {
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "short" });
 const dateRangeFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
 const distanceFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
-const editableRuns = new Set(["easy", "long", "quality", "race"]);
 const button = "inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#526167] px-3 text-sm font-semibold hover:bg-white/5 disabled:opacity-50";
 
 function formatDay(isoDate) {
   return dateFormat.format(new Date(`${isoDate}T12:00:00`));
-}
-
-function SessionDistanceEditor({ session, disabled, onSave, onCancel }) {
-  const [value, setValue] = useState(() => session.distance_km == null ? "" : String(session.distance_km).replace(".", ","));
-  const input = value.trim().replace(",", ".");
-  const km = Number(input);
-  const valid = /^\d+(?:\.\d)?$/.test(input) && Number.isFinite(km) && km >= 0.1;
-
-  function submit(event) {
-    event.preventDefault();
-    if (valid && !disabled) onSave(km);
-  }
-
-  return (
-    <form onSubmit={submit} className="col-span-2 mt-1 flex flex-wrap items-end gap-2 rounded-lg bg-[#263542] px-2.5 py-2">
-      <label className="grid gap-1 text-xs font-medium text-slate-200">
-        Дистанция, км
-        <input autoFocus className={`${field} w-28`} inputMode="decimal" value={value}
-          onChange={(event) => setValue(event.target.value)} disabled={disabled} />
-      </label>
-      <button type="submit" className={`${button} bg-[#2c3b57] text-[#d6deff]`} disabled={!valid || disabled}>
-        Сохранить
-      </button>
-      <button type="button" className={button} onClick={onCancel} disabled={disabled}>Отмена</button>
-    </form>
-  );
 }
 
 function WeekMoveForm({ plan, proposal, disabled, onMove, onCancel }) {
@@ -163,15 +134,6 @@ function WeekMoveForm({ plan, proposal, disabled, onMove, onCancel }) {
       </div>
     </form>
   );
-}
-
-async function requestWeek(path, options) {
-  const response = await fetch(`/api/coach/week${path}`, options);
-  const result = await response.json().catch(() => null);
-  if (!response.ok || !result) {
-    throw new Error(typeof result?.detail === "string" ? result.detail : "Не удалось загрузить план недели.");
-  }
-  return result;
 }
 
 export default function TrainingWeekPanel({
@@ -309,7 +271,7 @@ export default function TrainingWeekPanel({
         )}
         <ol className="divide-y divide-white/10 rounded-lg border border-white/10">
           {plan.sessions.map((session) => {
-            const editable = !draft && editableRuns.has(session.kind)
+            const editable = !draft && isPlannedRun(session)
               && (session.status === "upcoming" || session.status === "today");
             const editing = editable && !showMove && editingDate === session.date;
             const distanceLabel = session.distance_km == null ? "" : `${distanceFormat.format(session.distance_km)} км`;
@@ -324,7 +286,7 @@ export default function TrainingWeekPanel({
                   {!draft && session.actual_km != null && <span>факт {distanceFormat.format(session.actual_km)} км</span>}
                   {editable && (
                     <button type="button" disabled={busy} aria-expanded={editing}
-                      aria-label={`Изменить дистанцию, ${formatDay(session.date)}`} title="Изменить дистанцию"
+                      aria-label={`Изменить тренировку, ${formatDay(session.date)}`} title="Изменить тренировку"
                       onClick={() => {
                         closeMove();
                         setEditingDate(editing ? null : session.date);
@@ -334,13 +296,13 @@ export default function TrainingWeekPanel({
                     </button>
                   )}
                 </span>
-                <span className="text-slate-300">{session.kind !== "rest" && session.instruction}</span>
+                <span className="min-w-0 whitespace-pre-wrap break-words text-slate-300">{session.kind !== "rest" && session.instruction}</span>
                 {!draft && <span className={`text-right text-[11px] ${session.distance_status === "on_target" ? "text-emerald-300" : "text-slate-400"}`}>
                   {distanceStatus[session.distance_status] || statuses[session.status]}
                 </span>}
                 {editing && (
-                  <SessionDistanceEditor session={session} disabled={busy} onCancel={() => setEditingDate(null)}
-                    onSave={(km) => saveSessionEdit("/distance", "PATCH", { session_date: session.date, distance_km: km }, `Дистанция обновлена до ${distanceFormat.format(km)} км.`)} />
+                  <PlannedSessionEditor session={session} disabled={busy} onCancel={() => setEditingDate(null)}
+                    onSave={(fields) => saveSessionEdit("/distance", "PATCH", fields, "Тренировка обновлена.")} />
                 )}
               </li>
             );

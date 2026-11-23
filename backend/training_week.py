@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from dashboard_data import monday_of, parse_date
 
-RUN_KINDS = {"easy", "long", "quality", "race"}
+RUN_KINDS = {"easy", "recovery", "long", "tempo", "intervals", "quality", "race"}
+SESSION_DESCRIPTION_LIMIT = 500
 
 
 class WeekPreferences(BaseModel):
@@ -231,24 +232,36 @@ def move_week_session(plan: dict, activities: list[dict], today: date, from_day:
     }
 
 
-def change_week_distance(plan: dict, activities: list[dict], today: date, day: date, distance_km: float) -> dict:
+def change_week_distance(
+    plan: dict, activities: list[dict], today: date, day: date, distance_km: float,
+    *, kind: str | None = None, instruction: str | None = None,
+) -> dict:
     if day < today:
-        raise ValueError("Изменить дистанцию можно у предстоящей пробежки.")
+        raise ValueError("Изменить план можно у предстоящей пробежки.")
 
     session = next((row for row in plan["sessions"] if row["date"] == day.isoformat()), None)
     if session is None or session["kind"] not in RUN_KINDS:
         raise ValueError("Выбери пробежку из подтверждённого плана.")
     if any(parse_date(row.get("start_time")) == day for row in activities):
-        raise ValueError("За этот день уже есть запись Garmin. Плановая дистанция сохранена для сверки.")
+        raise ValueError("За этот день уже есть запись Garmin. Исходный план сохранён для сверки.")
     if not isfinite(distance_km) or distance_km < 0.1 or distance_km != round(distance_km, 1):
         raise ValueError("Укажи дистанцию от 0,1 км с точностью до десятых.")
-    if session.get("distance_km") == distance_km:
+    new_kind = session["kind"] if kind is None else kind
+    if new_kind not in RUN_KINDS or (new_kind != session["kind"] and "race" in {new_kind, session["kind"]}):
+        raise ValueError("Выбери тип беговой тренировки. Тип запланированного старта фиксирован.")
+    description = session.get("instruction") if instruction is None else instruction.strip()
+    if instruction is not None and len(description) > SESSION_DESCRIPTION_LIMIT:
+        raise ValueError(f"Описание должно содержать до {SESSION_DESCRIPTION_LIMIT} символов.")
+    updated = {**session, "kind": new_kind, "distance_km": distance_km}
+    if instruction is not None:
+        updated["instruction"] = description
+    if updated == session:
         return plan
 
     return {
         **plan,
         "sessions": [
-            {**row, "distance_km": distance_km} if row is session else row
+            updated if row is session else row
             for row in plan["sessions"]
         ],
         "revision": plan.get("revision", 0) + 1,
@@ -265,7 +278,7 @@ def week_context(plan: dict | None, activities: list[dict], today: date) -> dict
         and day["date"] >= today.isoformat()
     ), None)
     return {
-        "next_session": {key: next_session[key] for key in ("date", "kind", "distance_km")} if next_session else None,
+        "next_session": {key: next_session.get(key) for key in ("date", "kind", "distance_km", "instruction")} if next_session else None,
         "range": [progress["sessions"][0]["date"], progress["sessions"][-1]["date"]],
         "expired": progress["expired"],
         "lighter": progress.get("lighter"),
@@ -276,7 +289,9 @@ def week_context(plan: dict | None, activities: list[dict], today: date) -> dict
         "matched_sessions": progress["matched_sessions"],
         "planned_sessions": progress["planned_sessions"],
         "days": [
-            {key: value for key, value in day.items() if key in {"date", "kind", "distance_km", "status", "actual_km", "distance_status"}}
+            {key: value for key, value in day.items() if key in {
+                "date", "kind", "distance_km", "instruction", "status", "actual_km", "distance_status",
+            }}
             for day in progress["sessions"]
         ],
     }
