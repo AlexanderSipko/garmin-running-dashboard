@@ -427,7 +427,11 @@ def health() -> dict[str, str]:
     except Exception as exc:
         logger.error("Database health check failed: %s", type(exc).__name__)
         raise HTTPException(503, "База данных недоступна. Проверь DATABASE_URL.") from None
-    return {"status": "ok", "database": "postgresql" if database.is_postgres else "sqlite"}
+    return {
+        "status": "ok",
+        "database": "postgresql" if database.is_postgres else "sqlite",
+        "model": settings.gigachat_model,
+    }
 
 
 @app.get("/api/coach/status")
