@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 from itertools import combinations
+from math import isfinite
 from statistics import median
 from typing import Literal
 
@@ -226,6 +227,30 @@ def move_week_session(plan: dict, activities: list[dict], today: date, from_day:
     return {
         **plan,
         "sessions": [sessions[key] for key in sorted(sessions)],
+        "revision": plan.get("revision", 0) + 1,
+    }
+
+
+def change_week_distance(plan: dict, activities: list[dict], today: date, day: date, distance_km: float) -> dict:
+    if day < today:
+        raise ValueError("Изменить дистанцию можно у предстоящей пробежки.")
+
+    session = next((row for row in plan["sessions"] if row["date"] == day.isoformat()), None)
+    if session is None or session["kind"] not in RUN_KINDS:
+        raise ValueError("Выбери пробежку из подтверждённого плана.")
+    if any(parse_date(row.get("start_time")) == day for row in activities):
+        raise ValueError("За этот день уже есть запись Garmin. Плановая дистанция сохранена для сверки.")
+    if not isfinite(distance_km) or distance_km < 0.1 or distance_km != round(distance_km, 1):
+        raise ValueError("Укажи дистанцию от 0,1 км с точностью до десятых.")
+    if session.get("distance_km") == distance_km:
+        return plan
+
+    return {
+        **plan,
+        "sessions": [
+            {**row, "distance_km": distance_km} if row is session else row
+            for row in plan["sessions"]
+        ],
         "revision": plan.get("revision", 0) + 1,
     }
 

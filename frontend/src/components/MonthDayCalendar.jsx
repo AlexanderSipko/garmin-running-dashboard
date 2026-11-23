@@ -18,31 +18,46 @@ function buildWeeks(year, month) {
   }));
 }
 
+function ComparisonItem({ label, km, change, markedDeload, title, className = "" }) {
+  return (
+    <div className={`flex min-w-0 flex-col gap-x-1.5 gap-y-0.5 @min-[535px]:flex-row @min-[535px]:items-baseline ${className}`} title={title}>
+      <dt className="text-[#adbbc0]">{label}</dt>
+      <dd className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+        {change != null && <b className="whitespace-nowrap text-[#f3bc7f]">{percent.format(change)}</b>}
+        <span className={`whitespace-nowrap ${change == null ? "font-semibold text-[#e5ebee]" : "text-[#adbbc0]"}`}>
+          {change == null ? `${distance.format(km)} км` : `(${distance.format(km)} км)`}
+        </span>
+        {markedDeload && <span className="text-[#9fcfc2]">разгрузка</span>}
+      </dd>
+    </div>
+  );
+}
+
 function WeekVolumeComparison({ comparison, previousDeload }) {
   const { previousKm, previousChange, typicalKm, typicalChange } = comparison;
   if (previousKm == null) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-[#adbbc0]">
-      <span title={`Предыдущая неделя: ${distance.format(previousKm)} км`}>
-        {previousChange == null ? "Прошлая неделя" : "К прошлой"}
-        {previousChange != null && <b className="ml-1 text-[#f3bc7f]">{percent.format(previousChange)}</b>}
-        <span className="ml-1">({distance.format(previousKm)} км)</span>
-        {previousDeload && <span className="ml-1 text-[#9fcfc2]">· разгрузка</span>}
-      </span>
+    <dl className="mt-1 grid grid-cols-3 gap-x-2 border-t border-white/10 pt-1 text-[11px] leading-tight @min-[535px]:grid-cols-[11rem_10rem_minmax(0,1fr)]">
+      <ComparisonItem
+        label={previousChange == null ? "Прошлая неделя" : "К прошлой"}
+        km={previousKm} change={previousChange} markedDeload={previousDeload}
+        title="Изменение объёма к предыдущей неделе"
+      />
       {typicalKm != null && (
-        <span title="Медиана километража за 6 предыдущих завершённых недель">
-          {typicalChange == null ? "Типичная неделя" : "К типичной"}
-          {typicalChange != null && <b className="ml-1 text-[#f3bc7f]">{percent.format(typicalChange)}</b>}
-          <span className="ml-1">({distance.format(typicalKm)} км)</span>
-        </span>
+        <ComparisonItem
+          label={typicalChange == null ? "Типичная неделя" : "К типичной"}
+          km={typicalKm} change={typicalChange}
+          title="Медиана километража за 6 предыдущих завершённых недель"
+        />
       )}
       {previousKm > 0 && !previousDeload && (
-        <span title="Ориентир для сравнения объёма, 110% от прошлой недели">
-          Ориентир +10%: <b className="text-[#e5ebee]">{distance.format(previousKm * 1.1)} км</b>
-        </span>
+        <ComparisonItem
+          label="Ориентир +10%" km={previousKm * 1.1} className="col-start-3"
+          title="Ориентир для сравнения объёма, 110% от прошлой недели"
+        />
       )}
-    </div>
+    </dl>
   );
 }
 
@@ -108,27 +123,48 @@ export default function MonthDayCalendar({
             plannedKm += plan.distance_km;
             recordedOnPlannedDaysKm += daySummaries.get(dayKey(date))?.runKm ?? 0;
           }
+          const deloadLabel = pendingWeek === weekKey
+            ? "Сохраняю…" : markedDeload ? "Разгрузочная" : "Отметить разгрузку";
+          const deloadAction = markedDeload ? "Снять отметку разгрузки" : "Отметить разгрузку";
 
           return <Fragment key={weekKey}>
-            <div className="col-span-7 mt-1 grid gap-1 rounded-md border border-[#ffffff0d] bg-[#ffffff06] px-2 py-1 text-xs tabular-nums text-[color:var(--soft)]">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-semibold max-[480px]:gap-x-2">
-                <span>{distance.format(weekKm)} км{currentWeek && <span className="ml-1 font-normal">на сегодня</span>}</span>
-                <span className="inline-flex items-center gap-1"><Gauge size={12} aria-label="Темп" />{weekKm ? `${fmtPace(weekSeconds / weekKm)}/км` : "—"}</span>
-                <span className="inline-flex items-center gap-1"><HeartPulse size={12} aria-label="Пульс" />{weekHrWeight ? `${Math.round(weekHrSeconds / weekHrWeight)} уд/мин` : "—"}</span>
+            <div className="@container col-span-7 mt-1 min-w-0 rounded-md border border-white/10 bg-[#ffffff06] px-2.5 py-1.5 tabular-nums">
+              <div className="flex min-h-8 items-center justify-between gap-2">
+                <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)] items-baseline gap-1 text-xs font-semibold leading-tight text-[#e5ebee] @min-[535px]:flex-initial @min-[535px]:grid-cols-[9rem_7rem_7rem] @min-[535px]:text-sm">
+                  <span className="whitespace-nowrap">
+                    {distance.format(weekKm)} <small className="text-[10px] text-[color:var(--soft)]">км</small>
+                    {currentWeek && (
+                      <small className="block text-[10px] font-normal text-[color:var(--soft)] @min-[535px]:ml-1 @min-[535px]:inline">
+                        на сегодня
+                      </small>
+                    )}
+                  </span>
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                    <Gauge size={12} className="shrink-0 text-[color:var(--soft)]" aria-label="Темп" />
+                    {weekKm ? <span>{fmtPace(weekSeconds / weekKm)}<small className="text-[10px] text-[color:var(--soft)]">/км</small></span> : "—"}
+                  </span>
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                    <HeartPulse size={12} className="shrink-0 text-[color:var(--soft)]" aria-label="Пульс" />
+                    {weekHrWeight ? (
+                      <span>{Math.round(weekHrSeconds / weekHrWeight)} <small className="text-[10px] text-[color:var(--soft)]">уд/мин</small></span>
+                    ) : "—"}
+                  </span>
+                </div>
                 {onMarkDeload && weekStart <= today && (
                   <button type="button" aria-pressed={markedDeload} disabled={Boolean(pendingWeek) || syncBusy}
+                    aria-label="Разгрузочная неделя" aria-busy={pendingWeek === weekKey} title={deloadAction}
                     onClick={() => toggleDeload(weekKey, !markedDeload)}
-                    className={`inline-flex min-h-8 items-center gap-1 rounded-md border px-2 text-[11px] disabled:opacity-50 ${markedDeload
+                    className={`inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-md border text-[11px] font-semibold disabled:opacity-50 @min-[535px]:h-7 @min-[535px]:w-auto @min-[535px]:px-2 ${markedDeload
                       ? "border-[#5b887c] bg-[#25413b] text-[#b5e6d8]"
                       : "border-[#45565d] text-[#bfcbcf] hover:bg-white/5"}`}>
-                    <Flag size={12} aria-hidden="true" />
-                    {pendingWeek === weekKey ? "Сохраняю…" : markedDeload ? "Разгрузочная" : "Отметить разгрузку"}
+                    <Flag size={14} fill={markedDeload ? "currentColor" : "none"} fillOpacity={0.28} aria-hidden="true" />
+                    <span className="hidden @min-[535px]:inline">{deloadLabel}</span>
                   </button>
                 )}
               </div>
               {comparison && <WeekVolumeComparison comparison={comparison} previousDeload={previousDeload} />}
               {showRunning && plannedKm > 0 && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b6c5ff]"
+                <span className="mt-1.5 flex w-fit items-center gap-1 text-[11px] font-semibold text-[#b6c5ff]"
                   title="Факт Garmin за запланированные беговые дни этой календарной недели">
                   <CalendarDays size={12} aria-hidden="true" />
                   План {distance.format(plannedKm)} км · факт {distance.format(recordedOnPlannedDaysKm)} км

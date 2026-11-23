@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CalendarDays, CalendarSync, LoaderCircle } from "lucide-react";
+import { CalendarDays, CalendarSync, LoaderCircle, Pencil } from "lucide-react";
 import { localDateKey } from "../lib/wellnessDates";
 
 const kinds = {
@@ -75,10 +75,39 @@ function WeekPreferenceFields({ value, onChange, disabled }) {
 }
 
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "short" });
+const dateRangeFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
+const distanceFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
+const editableRuns = new Set(["easy", "long", "quality", "race"]);
 const button = "inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#526167] px-3 text-sm font-semibold hover:bg-white/5 disabled:opacity-50";
 
 function formatDay(isoDate) {
   return dateFormat.format(new Date(`${isoDate}T12:00:00`));
+}
+
+function SessionDistanceEditor({ session, disabled, onSave, onCancel }) {
+  const [value, setValue] = useState(() => session.distance_km == null ? "" : String(session.distance_km).replace(".", ","));
+  const input = value.trim().replace(",", ".");
+  const km = Number(input);
+  const valid = /^\d+(?:\.\d)?$/.test(input) && Number.isFinite(km) && km >= 0.1;
+
+  function submit(event) {
+    event.preventDefault();
+    if (valid && !disabled) onSave(km);
+  }
+
+  return (
+    <form onSubmit={submit} className="col-span-2 mt-1 flex flex-wrap items-end gap-2 rounded-lg bg-[#263542] px-2.5 py-2">
+      <label className="grid gap-1 text-xs font-medium text-slate-200">
+        Дистанция, км
+        <input autoFocus className={`${field} w-28`} inputMode="decimal" value={value}
+          onChange={(event) => setValue(event.target.value)} disabled={disabled} />
+      </label>
+      <button type="submit" className={`${button} bg-[#2c3b57] text-[#d6deff]`} disabled={!valid || disabled}>
+        Сохранить
+      </button>
+      <button type="button" className={button} onClick={onCancel} disabled={disabled}>Отмена</button>
+    </form>
+  );
 }
 
 function WeekMoveForm({ plan, proposal, disabled, onMove, onCancel }) {
@@ -156,6 +185,7 @@ export default function TrainingWeekPanel({
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [moving, setMoving] = useState(false);
+  const [editingDate, setEditingDate] = useState(null);
   const activePlan = state?.active;
   const planVersion = activePlan ? `${activePlan.id}:${activePlan.revision ?? 0}` : null;
 
@@ -207,23 +237,24 @@ export default function TrainingWeekPanel({
     onDismissMove();
   }
 
-  async function moveSession(fromDate, toDate) {
-    setAction("move");
+  async function saveSessionEdit(path, method, fields, message) {
+    setAction(path);
     setError("");
     setFeedback("");
     try {
-      const result = await requestWeek("/move", {
-        method: "POST",
+      const result = await requestWeek(path, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           day, plan_id: activePlan.id, revision: activePlan.revision ?? 0,
-          from_date: fromDate, to_date: toDate,
+          ...fields,
         }),
       });
       setState(result);
       onPlanChanged(result.active);
       closeMove();
-      setFeedback(`Занятие перенесено на ${formatDay(toDate)}.`);
+      setEditingDate(null);
+      setFeedback(message);
     } catch (failure) {
       setError(failure.message);
     } finally {
@@ -234,14 +265,23 @@ export default function TrainingWeekPanel({
   const plan = state?.draft || state?.active;
   const draft = Boolean(state?.draft);
   const busy = disabled || loading || Boolean(action);
+  const showMove = moving || Boolean(moveProposal);
+  const planDates = plan && dateRangeFormat.formatRange(
+    new Date(`${plan.sessions[0].date}T12:00:00`),
+    new Date(`${plan.sessions.at(-1).date}T12:00:00`),
+  );
 
   return (
     <section className="grid gap-3 rounded-xl border border-[#415157] bg-[#172229] p-3" aria-label="План недели">
       <header className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-[#f3bc7f]">
-          <CalendarDays size={16} aria-hidden="true" /> План недели
-        </h3>
-        {plan && <span className="rounded-full bg-[#28383e] px-2.5 py-1 text-xs text-slate-200">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-bold text-[#f3bc7f]">
+            <CalendarDays size={16} aria-hidden="true" /> План недели
+          </h3>
+          {planDates && <p className="mt-0.5 pl-6 text-xs text-slate-400">{planDates}</p>}
+        </div>
+        {plan && <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${draft || plan.expired
+          ? "bg-[#28383e] text-slate-200" : "bg-[#24413c] text-[#b5e6d8]"}`}>
           {draft ? "Предложение" : plan.expired ? "Неделя завершилась" : "Подтверждён"}
         </span>}
       </header>
@@ -252,40 +292,74 @@ export default function TrainingWeekPanel({
       </p>}
 
       {plan && <>
-        <p className="text-sm leading-relaxed text-slate-200">{plan.rationale}</p>
-        <p className="text-xs text-slate-300">
-          {draft
-            ? `На 7 дней: ${plan.planned_km} запланированных км`
-            : `На текущую дату: ${plan.actual_run_km} из ${plan.planned_to_date_km} км по плану · найдено ${plan.matched_sessions} из ${plan.planned_sessions} занятий за неделю`}
-        </p>
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg bg-[#202e35] px-2.5 py-2 text-xs text-slate-300">
+          <span>План <b className="ml-1 text-[#c2cfff]">{distanceFormat.format(plan.planned_km)} км</b></span>
+          {!draft && (
+            <>
+              <span>Факт <b className="ml-1 text-[#f3bc7f]">{distanceFormat.format(plan.actual_run_km)} км</b>
+                {plan.planned_to_date_km > 0 && <span className="ml-1">из {distanceFormat.format(plan.planned_to_date_km)} км к сегодня</span>}
+              </span>
+              <span>{plan.matched_sessions} из {plan.planned_sessions} занятий</span>
+            </>
+          )}
+        </div>
+        {plan.rationale && <p className="text-xs leading-relaxed text-slate-300">{plan.rationale}</p>}
         {!draft && state?.synced_at && (
           <p className="text-xs text-slate-400">Последняя синхронизация Garmin: {new Date(state.synced_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
         )}
-        <ol className="divide-y divide-[#415157] rounded-lg border border-[#415157]">
-          {plan.sessions.map((session) => (
-            <li key={session.date} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 px-2.5 py-2 text-xs">
-              <span className="font-semibold">{formatDay(session.date)} · {kinds[session.kind]}</span>
-              <span className="text-right tabular-nums text-slate-300">
-                {session.distance_km != null && `${session.distance_km} км`}
-                {!draft && session.actual_km != null && `${session.distance_km != null ? " · " : ""}факт ${session.actual_km} км`}
-              </span>
-              <span className="text-slate-300">{session.instruction}</span>
-              {!draft && <span className={session.distance_status === "on_target" ? "text-emerald-300" : "text-slate-400"}>
-                {distanceStatus[session.distance_status] || statuses[session.status]}
-              </span>}
-            </li>
-          ))}
+        <ol className="divide-y divide-white/10 rounded-lg border border-white/10">
+          {plan.sessions.map((session) => {
+            const editable = !draft && editableRuns.has(session.kind)
+              && (session.status === "upcoming" || session.status === "today");
+            const editing = editable && !showMove && editingDate === session.date;
+            const distanceLabel = session.distance_km == null ? "" : `${distanceFormat.format(session.distance_km)} км`;
+            return (
+              <li key={session.date} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-0.5 px-2.5 py-1.5 text-xs">
+                <span className="flex flex-wrap items-baseline gap-x-2 font-semibold">
+                  <time dateTime={session.date} className="capitalize text-[#abbac4]">{formatDay(session.date)}</time>
+                  <span>{kinds[session.kind]}</span>
+                </span>
+                <span className="flex items-center justify-end gap-1.5 tabular-nums text-slate-300">
+                  {distanceLabel && <b className="text-[#c2cfff]">{distanceLabel}</b>}
+                  {!draft && session.actual_km != null && <span>факт {distanceFormat.format(session.actual_km)} км</span>}
+                  {editable && (
+                    <button type="button" disabled={busy} aria-expanded={editing}
+                      aria-label={`Изменить дистанцию, ${formatDay(session.date)}`} title="Изменить дистанцию"
+                      onClick={() => {
+                        closeMove();
+                        setEditingDate(editing ? null : session.date);
+                      }}
+                      className="grid size-7 place-items-center rounded-md text-[#c2cfff] hover:bg-white/10 focus-visible:outline-2 disabled:opacity-50">
+                      <Pencil size={13} aria-hidden="true" />
+                    </button>
+                  )}
+                </span>
+                <span className="text-slate-300">{session.kind !== "rest" && session.instruction}</span>
+                {!draft && <span className={`text-right text-[11px] ${session.distance_status === "on_target" ? "text-emerald-300" : "text-slate-400"}`}>
+                  {distanceStatus[session.distance_status] || statuses[session.status]}
+                </span>}
+                {editing && (
+                  <SessionDistanceEditor session={session} disabled={busy} onCancel={() => setEditingDate(null)}
+                    onSave={(km) => saveSessionEdit("/distance", "PATCH", { session_date: session.date, distance_km: km }, `Дистанция обновлена до ${distanceFormat.format(km)} км.`)} />
+                )}
+              </li>
+            );
+          })}
         </ol>
       </>}
 
       {!draft && activePlan && !activePlan.expired && (
-        moving || moveProposal ? (
+        showMove ? (
           <WeekMoveForm
             key={`${planVersion}:${moveProposal?.from_date || ""}:${moveProposal?.to_date || ""}`}
-            plan={activePlan} proposal={moveProposal} disabled={busy} onMove={moveSession} onCancel={closeMove}
+            plan={activePlan} proposal={moveProposal} disabled={busy} onCancel={closeMove}
+            onMove={(from, to) => saveSessionEdit("/move", "POST", { from_date: from, to_date: to }, `Занятие перенесено на ${formatDay(to)}.`)}
           />
         ) : (
-          <button type="button" className={`${button} w-fit`} disabled={busy} onClick={() => setMoving(true)}>
+          <button type="button" className={`${button} w-fit`} disabled={busy} onClick={() => {
+            setEditingDate(null);
+            setMoving(true);
+          }}>
             <CalendarSync size={15} aria-hidden="true" /> Перенести занятие
           </button>
         )
@@ -303,7 +377,7 @@ export default function TrainingWeekPanel({
         </> : (!plan || plan.expired) && (
           <button type="button" className={`${button} bg-[#3a3025] text-[#f3bc7f]`} disabled={busy || !preferences.available_days.length} onClick={() => changePlan("propose")}>
             {action === "propose" && <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />}
-            {action === "propose" ? "Составляю план…" : "Предложить план на 7 дней"}
+            {action === "propose" ? "Составляю план…" : plan?.expired ? "Предложить план на следующую неделю" : "Предложить план на 7 дней"}
           </button>
         )}
       </div>

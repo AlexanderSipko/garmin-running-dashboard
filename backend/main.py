@@ -22,7 +22,9 @@ from providers.gigachat import GigaChatError
 from settings import settings
 from runner_plan import plan_context
 from store import Database
-from training_week import WeekPreferences, activity_kind, build_week_draft, move_week_session, week_context, week_progress
+from training_week import (
+    WeekPreferences, activity_kind, build_week_draft, change_week_distance, move_week_session, week_context, week_progress,
+)
 
 database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
@@ -438,11 +440,19 @@ class WeekApprovalRequest(WeekPlanRequest):
     draft_id: str = Field(min_length=1, max_length=36)
 
 
-class WeekMoveRequest(WeekPlanRequest):
+class WeekEditRequest(WeekPlanRequest):
     plan_id: str = Field(min_length=1, max_length=36)
     revision: int = Field(ge=0)
+
+
+class WeekMoveRequest(WeekEditRequest):
     from_date: date
     to_date: date
+
+
+class WeekDistanceRequest(WeekEditRequest):
+    session_date: date
+    distance_km: float = Field(ge=0.1, allow_inf_nan=False)
 
 
 def validate_plan_day(day: date) -> None:
@@ -520,24 +530,37 @@ def approve_training_week(request: WeekApprovalRequest) -> dict[str, Any]:
     return training_week_state(read_store(), day)
 
 
-@app.post("/api/coach/week/move")
-def move_training_week(request: WeekMoveRequest) -> dict[str, Any]:
+def edit_training_week(request: WeekEditRequest, edit: Callable[[dict, list[dict]], dict]) -> dict[str, Any]:
     validate_plan_day(request.day)
 
-    def move(store: dict[str, Any]) -> None:
+    def save_edit(store: dict[str, Any]) -> None:
         active = store.get("training_week_active")
         if not active or active["id"] != request.plan_id or active.get("revision", 0) != request.revision:
-            raise HTTPException(409, "План изменился. Обнови его перед переносом.")
+            raise HTTPException(409, "План изменился. Открой его заново перед редактированием.")
         try:
-            store["training_week_active"] = move_week_session(
-                active, store.get("activities", []), request.day, request.from_date, request.to_date,
-            )
+            updated = edit(active, store.get("activities", []))
         except ValueError as error:
             raise HTTPException(409, str(error)) from None
-        store.pop("coach_daily", None)
+        if updated is not active:
+            store["training_week_active"] = updated
+            store.pop("coach_daily", None)
 
-    update_store(move)
+    update_store(save_edit)
     return training_week_state(read_store(), request.day)
+
+
+@app.post("/api/coach/week/move")
+def move_training_week(request: WeekMoveRequest) -> dict[str, Any]:
+    return edit_training_week(request, lambda plan, activities: move_week_session(
+        plan, activities, request.day, request.from_date, request.to_date,
+    ))
+
+
+@app.patch("/api/coach/week/distance")
+def change_training_week_distance(request: WeekDistanceRequest) -> dict[str, Any]:
+    return edit_training_week(request, lambda plan, activities: change_week_distance(
+        plan, activities, request.day, request.session_date, request.distance_km,
+    ))
 
 
 @app.delete("/api/coach/week")
