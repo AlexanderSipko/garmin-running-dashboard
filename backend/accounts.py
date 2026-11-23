@@ -125,6 +125,7 @@ def account_routes(database, verify_key):
             if plan != store.get("runner_plan"):
                 store["runner_plan"] = plan
                 store.pop("coach_daily", None)
+                store.pop("training_week_draft", None)
 
         database.update(user_id, update)
         return body

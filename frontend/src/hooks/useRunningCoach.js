@@ -76,6 +76,7 @@ function useRunningCoach({
   periodEnd,
   syncedAt,
   focusDay,
+  trainingWeekId,
   active = true,
 }) {
   const cache = useRef({ summaryCache: new Map(), summaryInFlight: new Map(), summaryErrors: new Map() }).current;
@@ -94,7 +95,7 @@ function useRunningCoach({
     () => ({ ...buildRequestPeriod(period, periodStart, periodEnd), daily: true, focus_date: focusDate }),
     [period, periodStart, periodEnd, focusDate]
   );
-  const cacheKey = `${focusDate}:${period}:${requestPeriod.start_date}:${requestPeriod.end_date}:${syncedAt || "unsynced"}`;
+  const cacheKey = `${focusDate}:${period}:${requestPeriod.start_date}:${requestPeriod.end_date}:${syncedAt || "unsynced"}:${trainingWeekId || "no-week"}`;
 
 
   useEffect(() => {
@@ -142,7 +143,7 @@ function useRunningCoach({
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [active, focusDate, requestPeriod.start_date, requestPeriod.end_date, status?.configured, syncedAt]);
+  }, [active, focusDate, requestPeriod.start_date, requestPeriod.end_date, status?.configured, syncedAt, trainingWeekId]);
 
   const refreshSummary = async () => {
     summaryCache.delete(cacheKey);

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Maximize2, Minimize2, ScanLine, Send, Sparkles, X } from "lucide-react";
+import TrainingWeekPanel from "./TrainingWeekPanel";
 import useRunningCoach from "../hooks/useRunningCoach";
 
 function Consultation({ active, focusDay, label, period, periodStart, periodEnd, syncedAt }) {
   const [question, setQuestion] = useState("");
-  const coach = useRunningCoach({ period, periodStart, periodEnd, syncedAt, focusDay, active });
+  const [trainingWeekId, setTrainingWeekId] = useState(null);
+  const coach = useRunningCoach({ period, periodStart, periodEnd, syncedAt, focusDay, active, trainingWeekId });
   const ready = coach.statusChecked && coach.configured && !coach.unavailable;
   const busy = coach.loadingSummary || coach.sending;
 
@@ -33,6 +35,8 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
           {coach.summary ? "Обновить сводку" : "Получить сводку"}
         </button>
       </div>
+      <TrainingWeekPanel active={active} today={focusDay} syncedAt={syncedAt}
+        disabled={!ready || busy} onApproved={setTrainingWeekId} />
       {coach.messages.length > 0 && <div className="grid max-h-72 gap-2 overflow-y-auto" aria-live="polite">
         {coach.messages.map((message, index) => (
           <div key={index} className={`rounded-xl p-3 text-sm leading-relaxed ${message.role === "user" ? "bg-[#382e24]" : "bg-[#172229]"}`}>
