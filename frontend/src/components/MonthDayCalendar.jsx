@@ -21,7 +21,7 @@ function buildWeeks(year, month) {
 function ComparisonItem({ label, km, change, markedDeload, title, className = "" }) {
   return (
     <div className={`flex min-w-0 flex-col gap-x-1.5 gap-y-0.5 @min-[535px]:flex-row @min-[535px]:items-baseline ${className}`} title={title}>
-      <dt className="text-[#adbbc0]">{label}</dt>
+      <dt className="shrink-0 whitespace-nowrap text-[#adbbc0]">{label}</dt>
       <dd className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
         {change != null && <b className="whitespace-nowrap text-[#f3bc7f]">{percent.format(change)}</b>}
         <span className={`whitespace-nowrap ${change == null ? "font-semibold text-[#e5ebee]" : "text-[#adbbc0]"}`}>
@@ -210,7 +210,7 @@ export default function MonthDayCalendar({
                     <Dumbbell className="text-[#a7b5ff]" size={15} aria-hidden="true" />
                   )}
                   {showPlan && (
-                    <span aria-hidden="true" className="max-w-full whitespace-nowrap rounded-sm border border-dashed border-[#7c8fc4] px-0.5 text-[10px] font-semibold leading-tight text-[#b6c5ff] sm:px-1 sm:text-xs">
+                    <span aria-hidden="true" className="max-w-full whitespace-nowrap rounded-md bg-[#303f5a] px-1 py-0.5 text-[10px] font-semibold leading-tight text-[#c2ceff] normal-case sm:px-1.5 sm:text-xs">
                       {plan.distance_km ? (
                         <>{distance.format(plan.distance_km)}<span className="max-[420px]:hidden"> км</span></>
                       ) : <CalendarDays size={12} />}

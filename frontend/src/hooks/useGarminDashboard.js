@@ -25,6 +25,16 @@ function replacePlannedSessions(dashboard, week) {
   };
 }
 
+function applyPlanChange(dashboard, { week, session }) {
+  if (week) return replacePlannedSessions(dashboard, week);
+  return {
+    ...dashboard,
+    planned_sessions: [
+      ...(dashboard.planned_sessions ?? []).filter(({ date }) => date !== session.date), session,
+    ],
+  };
+}
+
 function useGarminDashboard(publicDemo) {
   const [data, setData] = useState(() => publicDemo ? buildPublicDemoDashboard() : { activities: [] });
   const [busy, setBusy] = useState(false);
@@ -34,7 +44,7 @@ function useGarminDashboard(publicDemo) {
   const acceptDashboard = useCallback((dashboard, weekAtRequestStart) => {
     const changedWeek = lastWeekChange.current;
     setData(changedWeek && changedWeek !== weekAtRequestStart
-      ? replacePlannedSessions(dashboard, changedWeek)
+      ? applyPlanChange(dashboard, changedWeek)
       : dashboard);
   }, []);
 
@@ -129,9 +139,10 @@ function useGarminDashboard(publicDemo) {
     });
   }, []);
 
-  const replaceTrainingWeek = useCallback((week) => {
-    lastWeekChange.current = week;
-    setData((current) => replacePlannedSessions(current, week));
+  const replaceTrainingWeek = useCallback((week, session) => {
+    const change = { week, session };
+    lastWeekChange.current = change;
+    setData((current) => applyPlanChange(current, change));
   }, []);
 
   return {

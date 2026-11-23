@@ -234,13 +234,13 @@ def move_week_session(plan: dict, activities: list[dict], today: date, from_day:
 
 def change_week_distance(
     plan: dict, activities: list[dict], today: date, day: date, distance_km: float,
-    *, kind: str | None = None, instruction: str | None = None,
+    *, kind: str | None = None, instruction: str | None = None, adding: bool = False,
 ) -> dict:
     if day < today:
         raise ValueError("Изменить план можно у предстоящей пробежки.")
 
     session = next((row for row in plan["sessions"] if row["date"] == day.isoformat()), None)
-    if session is None or session["kind"] not in RUN_KINDS:
+    if session is None or (session["kind"] != "rest" if adding else session["kind"] not in RUN_KINDS):
         raise ValueError("Выбери пробежку из подтверждённого плана.")
     if any(parse_date(row.get("start_time")) == day for row in activities):
         raise ValueError("За этот день уже есть запись Garmin. Исходный план сохранён для сверки.")
@@ -265,6 +265,51 @@ def change_week_distance(
             for row in plan["sessions"]
         ],
         "revision": plan.get("revision", 0) + 1,
+    }
+
+
+def save_calendar_session(
+    store: dict, today: date, day: date, kind: str, distance_km: float, instruction: str, revision: int | None,
+) -> bool:
+    """Save a free-date workout. Return whether it was added to the active week."""
+    key = day.isoformat()
+    active = store.get("training_week_active")
+    sessions = store.setdefault("calendar_training_sessions", {})
+    existing = sessions.get(key)
+    in_week = active and any(session["date"] == key for session in active["sessions"])
+    if in_week:
+        if revision is not None or existing or any(
+            session["date"] == key and session["kind"] != "rest" for session in active["sessions"]
+        ):
+            raise ValueError("На этот день уже есть план. Открой день заново для редактирования.")
+        store["training_week_active"] = change_week_distance(
+            active, store.get("activities", []), today, day, distance_km,
+            kind=kind, instruction=instruction, adding=True,
+        )
+        return True
+
+    if revision != (existing["revision"] if existing else None):
+        raise ValueError("План на этот день изменился. Открой день заново.")
+    entry = {field: value for field, value in existing.items() if field != "revision"} if existing else {
+        "date": key, "kind": "rest",
+    }
+    updated = change_week_distance(
+        {"sessions": [entry], "revision": revision or 0}, store.get("activities", []),
+        today, day, distance_km, kind=kind, instruction=instruction, adding=existing is None,
+    )
+    sessions[key] = {**updated["sessions"][0], "revision": updated["revision"], "standalone": True}
+    store["calendar_plan_revision"] = store.get("calendar_plan_revision", 0) + 1
+    return False
+
+
+def include_calendar_sessions(plan: dict, calendar_sessions: dict) -> dict:
+    return {
+        **plan,
+        "sessions": [
+            {key: value for key, value in calendar_sessions[session["date"]].items() if key not in {"revision", "standalone"}}
+            if session["date"] in calendar_sessions else session
+            for session in plan["sessions"]
+        ],
     }
 
 

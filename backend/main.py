@@ -23,7 +23,8 @@ from settings import settings
 from runner_plan import plan_context
 from store import Database
 from training_week import (
-    WeekPreferences, activity_kind, build_week_draft, change_week_distance, move_week_session, week_context, week_progress,
+    WeekPreferences, activity_kind, build_week_draft, change_week_distance, include_calendar_sessions,
+    move_week_session, save_calendar_session, week_context, week_progress,
 )
 
 database = Database(settings.database_url, settings.sqlite_path)
@@ -331,12 +332,22 @@ def analyze_period(
         "previous_strength": strength_summary(previous) if previous is not None else None,
         "last_sync_at": store.get("synced_at"),
     }
+    calendar_sessions = store.get("calendar_training_sessions", {})
+    upcoming = [
+        calendar_sessions[key]
+        for key in sorted(calendar_sessions)
+        if reference_day.isoformat() <= key <= (reference_day + timedelta(days=6)).isoformat()
+    ]
+    if upcoming:
+        activity_summary["calendar_sessions_next_7_days"] = upcoming
     if start == end:
         confirmed_weeks = [store.get("training_week_active"), *reversed(store.get("training_week_history", []))]
         selected_session = next((
             session for plan in confirmed_weeks if plan
             for session in plan["sessions"] if session["date"] == start.isoformat()
         ), None)
+        if selected_session is None:
+            selected_session = calendar_sessions.get(start.isoformat())
         if selected_session:
             activity_summary["selected_day_plan"] = selected_session
     if question:
@@ -433,7 +444,8 @@ def daily_cache_key(day: date, start: date, end: date) -> str:
 def coach_cache_revision(store: dict[str, Any]) -> list:
     active_week = store.get("training_week_active") or {}
     return [store.get("synced_at"), store.get("wellness_synced_at"), store.get("runner_plan"),
-            active_week.get("id"), active_week.get("revision", 0), store.get("deload_weeks")]
+            active_week.get("id"), active_week.get("revision", 0), store.get("deload_weeks"),
+            store.get("calendar_plan_revision", 0)]
 
 
 class WeekPlanRequest(BaseModel):
@@ -465,6 +477,14 @@ class WeekDistanceRequest(WeekEditRequest):
     instruction: str | None = Field(default=None, max_length=500)
 
 
+class CalendarSessionRequest(WeekPlanRequest):
+    session_date: date
+    kind: str = Field(max_length=20)
+    distance_km: float = Field(ge=0.1, allow_inf_nan=False)
+    instruction: str = Field(max_length=500)
+    revision: int | None = Field(default=None, ge=0)
+
+
 def validate_plan_day(day: date) -> None:
     if abs((date.today() - day).days) > 1:
         raise HTTPException(422, "Обнови страницу, чтобы выбрать текущую дату.")
@@ -478,7 +498,8 @@ def training_week_state(store: dict[str, Any], day: date) -> dict[str, Any]:
         draft = None
     return {
         "active": week_progress(active, activities, day) if active else None,
-        "draft": week_progress(draft, [], day) if draft else None,
+        "draft": week_progress(include_calendar_sessions(draft, store.get("calendar_training_sessions", {})), [], day)
+        if draft else None,
         "synced_at": store.get("synced_at"),
         "preferences": store.get("training_week_preferences"),
     }
@@ -533,7 +554,11 @@ def approve_training_week(request: WeekApprovalRequest) -> dict[str, Any]:
             raise HTTPException(409, "Черновик изменился или устарел. Сформируй новый план.")
         if active:
             current.setdefault("training_week_history", []).append(active)
-        current["training_week_active"] = current.pop("training_week_draft")
+        calendar_sessions = current.get("calendar_training_sessions", {})
+        approved = include_calendar_sessions(current.pop("training_week_draft"), calendar_sessions)
+        current["training_week_active"] = approved
+        for session in approved["sessions"]:
+            calendar_sessions.pop(session["date"], None)
         current.pop("coach_daily", None)
 
     update_store(approve)
@@ -572,6 +597,29 @@ def change_training_week_distance(request: WeekDistanceRequest) -> dict[str, Any
         plan, activities, request.day, request.session_date, request.distance_km,
         kind=request.kind, instruction=request.instruction,
     ))
+
+
+@app.post("/api/coach/week/calendar-session")
+def save_training_calendar_session(request: CalendarSessionRequest) -> dict[str, Any]:
+    validate_plan_day(request.day)
+    result = {}
+
+    def save(store: dict[str, Any]) -> None:
+        try:
+            in_week = save_calendar_session(
+                store, request.day, request.session_date, request.kind,
+                request.distance_km, request.instruction, request.revision,
+            )
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from None
+        store.pop("coach_daily", None)
+        if in_week:
+            result["active"] = training_week_state(store, request.day)["active"]
+        else:
+            result["session"] = store["calendar_training_sessions"][request.session_date.isoformat()]
+
+    update_store(save)
+    return result
 
 
 @app.delete("/api/coach/week")

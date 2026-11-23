@@ -34,9 +34,14 @@ function CalendarPeriodExplorer({
   const [yearsOpen, setYearsOpen] = useState(false);
   const availableYears = useMemo(() => {
     const years = new Set(activities.map((activity) => getActivityDate(activity).getFullYear()));
-    years.add(new Date().getFullYear());
+    const currentYear = new Date().getFullYear();
+    years.add(currentYear);
+    if (!publicDemo) {
+      years.add(currentYear + 1);
+      for (const session of plannedSessions ?? []) years.add(Number(session.date.slice(0, 4)));
+    }
     return [...years].sort((first, second) => second - first);
-  }, [activities]);
+  }, [activities, plannedSessions, publicDemo]);
 
   const { daySummaries, monthSummaries, yearSummaries } = useMemo(
     () => summarizeCalendar(activities),
@@ -466,8 +471,8 @@ function CalendarPeriodExplorer({
             {Array.from({ length: 12 }, (_, month) => month).map((month) => {
               const monthName = monthNames[month];
               const currentDate = new Date();
-              const monthLocked = expandedYear > currentDate.getFullYear()
-                || (expandedYear === currentDate.getFullYear() && month > currentDate.getMonth());
+              const monthLocked = publicDemo && (expandedYear > currentDate.getFullYear()
+                || (expandedYear === currentDate.getFullYear() && month > currentDate.getMonth()));
               const summary = monthSummaries.get(`${expandedYear}-${month}`) || {
                 runKm: 0,
                 runSeconds: 0,
@@ -586,7 +591,7 @@ function CalendarPeriodExplorer({
 
         {selection.type === "day" && (
           <>
-            {dayPlan && <DayTrainingPlan key={dayPlan.date} session={dayPlan}
+            {!publicDemo && <DayTrainingPlan key={localDateKey(periodStart)} date={localDateKey(periodStart)} session={dayPlan}
               hasActivities={periodActivities.length > 0} onPlanChanged={onTrainingWeekChanged} />}
             {(!dayPlan || dayRuns.length > 0) && (
               <>

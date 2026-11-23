@@ -121,6 +121,7 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
         for plan in confirmed_weeks if plan
         for session in plan["sessions"] if session["kind"] != "rest"
     ]
+    planned_sessions.extend(store.get("calendar_training_sessions", {}).values())
     return {
         "connection": {
             "configured": configured,
