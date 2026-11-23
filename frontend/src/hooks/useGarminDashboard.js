@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { buildPublicDemoDashboard } from "../data/demoDashboard";
 import { hasWellnessForDay, localDateKey } from "../lib/wellnessDates";
 
@@ -10,16 +10,37 @@ function mergeWellnessDay(previous, incoming, day) {
   return { ...previous, metrics, synced_at: incoming.synced_at ?? previous?.synced_at };
 }
 
+function replacePlannedSessions(dashboard, week) {
+  const dates = new Set(week.sessions.map(({ date }) => date));
+  return {
+    ...dashboard,
+    planned_sessions: [
+      ...(dashboard.planned_sessions ?? []).filter((session) => !dates.has(session.date)),
+      ...week.sessions.filter(({ kind }) => kind !== "rest")
+        .map(({ date, kind, distance_km }) => ({ date, kind, distance_km })),
+    ],
+  };
+}
+
 function useGarminDashboard(publicDemo) {
   const [data, setData] = useState(() => publicDemo ? buildPublicDemoDashboard() : { activities: [] });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const lastWeekChange = useRef(null);
+
+  const acceptDashboard = useCallback((dashboard, weekAtRequestStart) => {
+    const changedWeek = lastWeekChange.current;
+    setData(changedWeek && changedWeek !== weekAtRequestStart
+      ? replacePlannedSessions(dashboard, changedWeek)
+      : dashboard);
+  }, []);
 
   useEffect(() => {
     if (publicDemo) return;
 
     const controller = new AbortController();
     const { signal } = controller;
+    const weekAtRequestStart = lastWeekChange.current;
     let wellnessRetry;
 
     fetch("/api/dashboard?days=3650", { signal })
@@ -29,7 +50,7 @@ function useGarminDashboard(publicDemo) {
       })
       .then((dashboard) => {
         if (signal.aborted) return;
-        setData(dashboard);
+        acceptDashboard(dashboard, weekAtRequestStart);
 
         const day = localDateKey(new Date());
         if (!hasWellnessForDay(dashboard.wellness, day)) {
@@ -57,9 +78,10 @@ function useGarminDashboard(publicDemo) {
       controller.abort();
       clearTimeout(wellnessRetry);
     };
-  }, [publicDemo]);
+  }, [publicDemo, acceptDashboard]);
 
   const sync = async () => {
+    const weekAtRequestStart = lastWeekChange.current;
     setBusy(true);
     setError("");
 
@@ -69,7 +91,7 @@ function useGarminDashboard(publicDemo) {
       if (!response.ok) {
         throw new Error(dashboard.detail || "Синхронизация не выполнена");
       }
-      setData(dashboard);
+      acceptDashboard(dashboard, weekAtRequestStart);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -104,10 +126,17 @@ function useGarminDashboard(publicDemo) {
     });
   }, []);
 
+  const replaceTrainingWeek = useCallback((week) => {
+    lastWeekChange.current = week;
+    setData((current) => replacePlannedSessions(current, week));
+  }, []);
+
   return {
     activities: data.activities ?? [],
     replaceActivity,
     deloadWeeks: data.deload_weeks,
+    plannedSessions: data.planned_sessions,
+    replaceTrainingWeek,
     markDeloadWeek,
     wellness: data.wellness,
     syncedAt: data?.connection?.synced_at || null,

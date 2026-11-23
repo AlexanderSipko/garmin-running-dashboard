@@ -27,6 +27,8 @@ function Dashboard({ demo, account, planRevision }) {
         planRevision={planRevision}
         wellness={dashboard.wellness}
         deloadWeeks={dashboard.deloadWeeks}
+        plannedSessions={dashboard.plannedSessions}
+        onTrainingWeekChanged={dashboard.replaceTrainingWeek}
         onMarkDeload={dashboard.markDeloadWeek}
       />
     </main>

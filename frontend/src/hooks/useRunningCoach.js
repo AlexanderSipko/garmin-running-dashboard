@@ -183,6 +183,7 @@ function useRunningCoach({
         ...current,
         { role: "assistant", content: result.answer, usage: result.usage },
       ]);
+      return result;
     } catch (requestError) {
       setMessages((current) => current.slice(0, -1));
       setError(requestError.message);

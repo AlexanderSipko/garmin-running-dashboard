@@ -205,6 +205,31 @@ def week_progress(plan: dict, activities: list[dict], today: date) -> dict:
     }
 
 
+def move_week_session(plan: dict, activities: list[dict], today: date, from_day: date, to_day: date) -> dict:
+    if from_day == to_day or min(from_day, to_day) < today:
+        raise ValueError("Выбери две разные даты, начиная с сегодняшнего дня.")
+
+    sessions = {session["date"]: session for session in plan["sessions"]}
+    source = sessions.get(from_day.isoformat())
+    target = sessions.get(to_day.isoformat())
+    if source is None or target is None:
+        raise ValueError("Перенос возможен между днями подтверждённого плана.")
+    if source["kind"] in {"rest", "race"}:
+        raise ValueError("Выбери запланированную тренировку. Дата забега фиксирована.")
+    if target["kind"] != "rest":
+        raise ValueError("На выбранный день уже запланировано занятие. Выбери свободный день.")
+    if any(parse_date(row.get("start_time")) in {from_day, to_day} for row in activities):
+        raise ValueError("За одну из дат уже есть активность Garmin. Выбери дни без записанных занятий.")
+
+    sessions[source["date"]] = {**target, "date": source["date"]}
+    sessions[target["date"]] = {**source, "date": target["date"]}
+    return {
+        **plan,
+        "sessions": [sessions[key] for key in sorted(sessions)],
+        "revision": plan.get("revision", 0) + 1,
+    }
+
+
 def week_context(plan: dict | None, activities: list[dict], today: date) -> dict | None:
     if plan is None:
         return None

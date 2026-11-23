@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { CalendarDays, LoaderCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CalendarDays, CalendarSync, LoaderCircle } from "lucide-react";
 import { localDateKey } from "../lib/wellnessDates";
 
 const kinds = {
@@ -81,6 +81,61 @@ function formatDay(isoDate) {
   return dateFormat.format(new Date(`${isoDate}T12:00:00`));
 }
 
+function WeekMoveForm({ plan, proposal, disabled, onMove, onCancel }) {
+  const freeDays = plan.sessions.filter(({ status }) => status === "today" || status === "upcoming");
+  const sources = freeDays.filter(({ kind }) => kind !== "rest" && kind !== "race");
+  const targets = freeDays.filter(({ kind }) => kind === "rest");
+  const validProposal = proposal?.plan_id === plan.id && proposal?.revision === (plan.revision ?? 0);
+  const [from, setFrom] = useState(() => validProposal ? proposal.from_date : "");
+  const [to, setTo] = useState(() => validProposal ? proposal.to_date : "");
+  const form = useRef(null);
+
+  useEffect(() => {
+    if (proposal) form.current?.scrollIntoView({ block: "nearest" });
+  }, [proposal]);
+
+  function confirm(event) {
+    event.preventDefault();
+    if (from && to) onMove(from, to);
+  }
+
+  return (
+    <form ref={form} onSubmit={confirm} className="grid gap-2 rounded-lg border border-[#52658b] p-2.5">
+      <h4 className="text-sm font-semibold text-[#c1cdff]">Перенести занятие</h4>
+      {sources.length > 0 && targets.length > 0 ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="grid gap-1 text-xs text-slate-300">
+            Занятие
+            <select className={field} value={from} onChange={(event) => setFrom(event.target.value)} disabled={disabled} required>
+              <option value="">Выбери занятие</option>
+              {sources.map((session) => <option key={session.date} value={session.date}>
+                {formatDay(session.date)} · {kinds[session.kind]}
+              </option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs text-slate-300">
+            Новый день
+            <select className={field} value={to} onChange={(event) => setTo(event.target.value)} disabled={disabled} required>
+              <option value="">Выбери свободный день</option>
+              {targets.map(({ date }) => <option key={date} value={date}>{formatDay(date)}</option>)}
+            </select>
+          </label>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-300">Для переноса нужны предстоящее занятие и свободный день в этом плане.</p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {sources.length > 0 && targets.length > 0 && (
+          <button type="submit" className={`${button} bg-[#2c3b57] text-[#d6deff]`} disabled={disabled || !from || !to}>
+            Подтвердить перенос
+          </button>
+        )}
+        <button type="button" className={button} disabled={disabled} onClick={onCancel}>Отмена</button>
+      </div>
+    </form>
+  );
+}
+
 async function requestWeek(path, options) {
   const response = await fetch(`/api/coach/week${path}`, options);
   const result = await response.json().catch(() => null);
@@ -90,19 +145,30 @@ async function requestWeek(path, options) {
   return result;
 }
 
-export default function TrainingWeekPanel({ active, today, syncedAt, disabled, onApproved }) {
+export default function TrainingWeekPanel({
+  active, today, syncedAt, disabled, onPlanVersion, onPlanChanged, moveProposal, onDismissMove,
+}) {
   const day = localDateKey(today);
   const [state, setState] = useState(null);
   const [preferences, setPreferences] = useState(initialPreferences);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState(null);
   const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [moving, setMoving] = useState(false);
+  const activePlan = state?.active;
+  const planVersion = activePlan ? `${activePlan.id}:${activePlan.revision ?? 0}` : null;
+
+  useEffect(() => {
+    onPlanVersion(planVersion);
+  }, [onPlanVersion, planVersion]);
 
   useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
     setLoading(true);
     setError("");
+    setFeedback("");
     requestWeek(`?day=${day}`, { signal: controller.signal })
       .then((result) => {
         if (controller.signal.aborted) return;
@@ -128,7 +194,36 @@ export default function TrainingWeekPanel({ active, today, syncedAt, disabled, o
         ),
       });
       setState(result);
-      if (mode === "approve") onApproved(result.active.id);
+      if (mode === "approve") onPlanChanged(result.active);
+    } catch (failure) {
+      setError(failure.message);
+    } finally {
+      setAction(null);
+    }
+  }
+
+  function closeMove() {
+    setMoving(false);
+    onDismissMove();
+  }
+
+  async function moveSession(fromDate, toDate) {
+    setAction("move");
+    setError("");
+    setFeedback("");
+    try {
+      const result = await requestWeek("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          day, plan_id: activePlan.id, revision: activePlan.revision ?? 0,
+          from_date: fromDate, to_date: toDate,
+        }),
+      });
+      setState(result);
+      onPlanChanged(result.active);
+      closeMove();
+      setFeedback(`Занятие перенесено на ${formatDay(toDate)}.`);
     } catch (failure) {
       setError(failure.message);
     } finally {
@@ -183,6 +278,19 @@ export default function TrainingWeekPanel({ active, today, syncedAt, disabled, o
         </ol>
       </>}
 
+      {!draft && activePlan && !activePlan.expired && (
+        moving || moveProposal ? (
+          <WeekMoveForm
+            key={`${planVersion}:${moveProposal?.from_date || ""}:${moveProposal?.to_date || ""}`}
+            plan={activePlan} proposal={moveProposal} disabled={busy} onMove={moveSession} onCancel={closeMove}
+          />
+        ) : (
+          <button type="button" className={`${button} w-fit`} disabled={busy} onClick={() => setMoving(true)}>
+            <CalendarSync size={15} aria-hidden="true" /> Перенести занятие
+          </button>
+        )
+      )}
+
       {!draft && (!plan || plan.expired) && !loading && (
         <WeekPreferenceFields value={preferences} onChange={setPreferences} disabled={busy} />
       )}
@@ -200,6 +308,7 @@ export default function TrainingWeekPanel({ active, today, syncedAt, disabled, o
         )}
       </div>
       {error && <p role="alert" className="text-xs text-rose-300">{error}</p>}
+      {feedback && <p role="status" className="text-xs text-emerald-300">{feedback}</p>}
     </section>
   );
 }

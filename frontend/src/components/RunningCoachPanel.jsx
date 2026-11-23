@@ -3,9 +3,10 @@ import { LoaderCircle, Maximize2, Minimize2, ScanLine, Send, Sparkles, X } from 
 import TrainingWeekPanel from "./TrainingWeekPanel";
 import useRunningCoach from "../hooks/useRunningCoach";
 
-function Consultation({ active, focusDay, label, period, periodStart, periodEnd, syncedAt }) {
+function Consultation({ active, focusDay, label, period, periodStart, periodEnd, syncedAt, onTrainingWeekChanged }) {
   const [question, setQuestion] = useState("");
   const [trainingWeekId, setTrainingWeekId] = useState(null);
+  const [moveProposal, setMoveProposal] = useState(null);
   const coach = useRunningCoach({ period, periodStart, periodEnd, syncedAt, focusDay, active, trainingWeekId });
   const ready = coach.statusChecked && coach.configured && !coach.unavailable;
   const busy = coach.loadingSummary || coach.sending;
@@ -13,7 +14,9 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
   function submit(event) {
     event.preventDefault();
     if (!question.trim() || busy) return;
-    void coach.ask(question);
+    void coach.ask(question).then((result) => {
+      if (result?.training_move) setMoveProposal(result.training_move);
+    });
     setQuestion("");
   }
 
@@ -36,7 +39,8 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
         </button>
       </div>
       <TrainingWeekPanel active={active} today={focusDay} syncedAt={syncedAt}
-        disabled={!ready || busy} onApproved={setTrainingWeekId} />
+        disabled={busy} onPlanVersion={setTrainingWeekId} onPlanChanged={onTrainingWeekChanged}
+        moveProposal={moveProposal} onDismissMove={() => setMoveProposal(null)} />
       {coach.messages.length > 0 && <div className="grid max-h-72 gap-2 overflow-y-auto" aria-live="polite">
         {coach.messages.map((message, index) => (
           <div key={index} className={`rounded-xl p-3 text-sm leading-relaxed ${message.role === "user" ? "bg-[#382e24]" : "bg-[#172229]"}`}>
@@ -61,7 +65,7 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
   );
 }
 
-export default function RunningCoachPanel({ period, periodStart, periodEnd, label, syncedAt }) {
+export default function RunningCoachPanel({ period, periodStart, periodEnd, label, syncedAt, onTrainingWeekChanged }) {
   const modal = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
   const [opened, setOpened] = useState(false);
@@ -108,7 +112,8 @@ export default function RunningCoachPanel({ period, periodStart, periodEnd, labe
             {opened && (
               <div className="pt-3">
                 <Consultation active={isOpen} focusDay={focusDay} label={label}
-                  period={period} periodStart={periodStart} periodEnd={periodEnd} syncedAt={syncedAt} />
+                  period={period} periodStart={periodStart} periodEnd={periodEnd} syncedAt={syncedAt}
+                  onTrainingWeekChanged={onTrainingWeekChanged} />
               </div>
             )}
           </div>

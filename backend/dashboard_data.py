@@ -110,6 +110,12 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
             "weight_latest": round(weights[-1]["value"], 1) if weights else None,
             "weight_date": weights[-1]["date"] if weights else None,
         })
+    confirmed_weeks = [*store.get("training_week_history", []), store.get("training_week_active")]
+    planned_sessions = [
+        {key: session.get(key) for key in ("date", "kind", "distance_km")}
+        for plan in confirmed_weeks if plan
+        for session in plan["sessions"] if session["kind"] != "rest"
+    ]
     return {
         "connection": {
             "configured": configured,
@@ -127,6 +133,7 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
         },
         "weekly": weekly,
         "deload_weeks": store.get("deload_weeks", {}),
+        "planned_sessions": planned_sessions,
         "activities": activities[:5000],
         "wellness": {
             "years": yearly_wellness,

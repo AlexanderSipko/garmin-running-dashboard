@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from accounts import account_routes, check_origin, decrypt
 from coach import RunningCoach
-from coach_plan_dialog import TRAINING_TABLE, confirmed_plan_reply, is_plan_request
+from coach_plan_dialog import TRAINING_TABLE, confirmed_plan_reply, is_plan_request, plan_move_reply
 from coach_tools import GarminCoachTools, activity_pace
 from dashboard_data import build_dashboard, merge_activities, monday_of, parse_date
 from providers.gigachat import GigaChatClient
@@ -22,7 +22,7 @@ from providers.gigachat import GigaChatError
 from settings import settings
 from runner_plan import plan_context
 from store import Database
-from training_week import WeekPreferences, activity_kind, build_week_draft, week_context, week_progress
+from training_week import WeekPreferences, activity_kind, build_week_draft, move_week_session, week_context, week_progress
 
 database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
@@ -285,6 +285,7 @@ def analyze_period(
     focus_date: date | None = None,
     chat_summary: str | None = None,
     plan_day: date | None = None,
+    store: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if end < start:
         raise HTTPException(status_code=422, detail="Конец периода раньше его начала.")
@@ -298,7 +299,8 @@ def analyze_period(
             detail="Добавь ключ GigaChat в настройках аккаунта.",
         )
 
-    store = read_store()
+    if store is None:
+        store = read_store()
     reference_day = (focus_date or start) if daily else date.today()
     if start <= reference_day < end:
         end = reference_day
@@ -420,7 +422,8 @@ def daily_cache_key(day: date, start: date, end: date) -> str:
 
 def coach_cache_revision(store: dict[str, Any]) -> list:
     active_week = store.get("training_week_active") or {}
-    return [store.get("synced_at"), store.get("wellness_synced_at"), store.get("runner_plan"), active_week.get("id"), store.get("deload_weeks")]
+    return [store.get("synced_at"), store.get("wellness_synced_at"), store.get("runner_plan"),
+            active_week.get("id"), active_week.get("revision", 0), store.get("deload_weeks")]
 
 
 class WeekPlanRequest(BaseModel):
@@ -433,6 +436,13 @@ class WeekDraftRequest(WeekPlanRequest):
 
 class WeekApprovalRequest(WeekPlanRequest):
     draft_id: str = Field(min_length=1, max_length=36)
+
+
+class WeekMoveRequest(WeekPlanRequest):
+    plan_id: str = Field(min_length=1, max_length=36)
+    revision: int = Field(ge=0)
+    from_date: date
+    to_date: date
 
 
 def validate_plan_day(day: date) -> None:
@@ -501,11 +511,33 @@ def approve_training_week(request: WeekApprovalRequest) -> dict[str, Any]:
         draft = current.get("training_week_draft")
         if not state["draft"] or draft["id"] != request.draft_id:
             raise HTTPException(409, "Черновик изменился или устарел. Сформируй новый план.")
+        if active:
+            current.setdefault("training_week_history", []).append(active)
         current["training_week_active"] = current.pop("training_week_draft")
         current.pop("coach_daily", None)
 
     update_store(approve)
     return training_week_state(read_store(), day)
+
+
+@app.post("/api/coach/week/move")
+def move_training_week(request: WeekMoveRequest) -> dict[str, Any]:
+    validate_plan_day(request.day)
+
+    def move(store: dict[str, Any]) -> None:
+        active = store.get("training_week_active")
+        if not active or active["id"] != request.plan_id or active.get("revision", 0) != request.revision:
+            raise HTTPException(409, "План изменился. Обнови его перед переносом.")
+        try:
+            store["training_week_active"] = move_week_session(
+                active, store.get("activities", []), request.day, request.from_date, request.to_date,
+            )
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from None
+        store.pop("coach_daily", None)
+
+    update_store(move)
+    return training_week_state(read_store(), request.day)
 
 
 @app.delete("/api/coach/week")
@@ -573,14 +605,14 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
         raise HTTPException(422, "Напиши вопрос консультанту.")
     today = request.today or date.today()
     validate_plan_day(today)
+    store = read_store()
+    active_plan = store.get("training_week_active")
+    activities = store.get("activities", [])
 
-    def reply_from_plan() -> str:
-        store = read_store()
-        return confirmed_plan_reply(store.get("training_week_active"), store.get("activities", []), today)
-
-    if is_plan_request(question):
+    move_reply = plan_move_reply(question, active_plan, activities, today)
+    if move_reply is not None or is_plan_request(question):
         result = {
-            "answer": reply_from_plan(),
+            **(move_reply or {"answer": confirmed_plan_reply(active_plan, activities, today)}),
             "model": "training-week",
             "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
         }
@@ -595,9 +627,10 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
             focus_date=request.focus_date,
             chat_summary=request.summary,
             plan_day=today,
+            store=store,
         )
         if TRAINING_TABLE.search(result["answer"]):
-            result["answer"] = reply_from_plan()
+            result["answer"] = confirmed_plan_reply(active_plan, activities, today)
 
     focus_day = (request.focus_date or request.start_date).isoformat()
 
@@ -663,16 +696,6 @@ def dashboard_wellness_day(day: date) -> dict[str, Any]:
         if points:
             metrics[name] = points
     return {"metrics": metrics, "synced_at": store.get("wellness_synced_at")}
-
-
-@app.get("/api/dashboard/readiness")
-def dashboard_readiness(day: date) -> dict[str, Any]:
-    validate_plan_day(day)
-    tools = account_coach_tools(read_store())
-    result = tools.call("get_garmin_recovery", {"day": day.isoformat()})
-    if "error" in result:
-        raise HTTPException(503, "Показатели восстановления временно недоступны.")
-    return result
 
 
 @app.get("/api/activities/{activity_id}/splits")

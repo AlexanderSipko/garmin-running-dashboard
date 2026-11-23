@@ -25,7 +25,10 @@ const monthShortNames = Array.from({ length: 12 }, (_, month) =>
   new Date(2024, month, 1).toLocaleDateString("ru-RU", { month: "short" }).replace(".", "")
 );
 
-function CalendarPeriodExplorer({ activities, busy, error, onSync, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness, planRevision, deloadWeeks, onMarkDeload }) {
+function CalendarPeriodExplorer({
+  activities, busy, error, onSync, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
+  planRevision, deloadWeeks, plannedSessions, onTrainingWeekChanged, onMarkDeload,
+}) {
   const detailCache = useRef(new Map()).current;
   const [yearsOpen, setYearsOpen] = useState(false);
   const availableYears = useMemo(() => {
@@ -334,6 +337,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, onActivityUpd
           periodEnd={periodEnd}
           label={selectionLabel}
           syncedAt={syncedAt}
+          onTrainingWeekChanged={onTrainingWeekChanged}
         />}
 
         <div className="period-summary-metrics grid grid-cols-[repeat(auto-fit,_minmax(112px,_1fr))] gap-[9px] max-[420px]:grid-cols-[repeat(2,_minmax(0,_1fr))]">
@@ -570,6 +574,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, onActivityUpd
             selection={selection}
             onSelectDay={selectDay}
             deloadWeeks={deloadWeeks}
+            plannedSessions={plannedSessions}
             onMarkDeload={onMarkDeload}
             syncBusy={busy}
           />
@@ -584,7 +589,7 @@ function CalendarPeriodExplorer({ activities, busy, error, onSync, onActivityUpd
 
       </section>
 
-      <YearHealthPanel wellness={wellness} syncedAt={syncedAt} publicDemo={publicDemo} />
+      <YearHealthPanel wellness={wellness} />
     </main>
   );
 }

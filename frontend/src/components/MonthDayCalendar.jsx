@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
+import { CalendarDays, Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
 import { dayKey, weeklyVolumeComparison } from "../lib/calendarAnalytics";
 import { fmtPace } from "../lib/format";
 import { localDateKey } from "../lib/wellnessDates";
@@ -48,13 +48,15 @@ function WeekVolumeComparison({ comparison, previousDeload }) {
 
 export default function MonthDayCalendar({
   expandedYear, calendarMonth, monthNames, daySummaries, selectedTypes, selection, onSelectDay,
-  deloadWeeks = {}, onMarkDeload, syncBusy,
+  deloadWeeks = {}, plannedSessions = [], onMarkDeload, syncBusy,
 }) {
   const [pendingWeek, setPendingWeek] = useState(null);
   const [labelError, setLabelError] = useState(null);
   const calendarWeeks = buildWeeks(expandedYear, calendarMonth);
   const today = new Date();
   const showRunning = selectedTypes.includes("running");
+  const showStrength = selectedTypes.includes("strength");
+  const planByDate = new Map(plannedSessions.map((session) => [session.date, session]));
   let historyStart = null;
   for (const key of daySummaries.keys()) {
     const [year, month, day] = key.split("-").map(Number);
@@ -98,6 +100,14 @@ export default function MonthDayCalendar({
             ? weeklyVolumeComparison(daySummaries, weekStart, weekKm, historyStart)
             : null;
           const previousDeload = comparison && Boolean(deloadWeeks[localDateKey(comparison.previousMonday)]);
+          let plannedKm = 0;
+          let recordedOnPlannedDaysKm = 0;
+          for (const date of week.days) {
+            const plan = planByDate.get(localDateKey(date));
+            if (!plan?.distance_km || plan.kind === "strength") continue;
+            plannedKm += plan.distance_km;
+            recordedOnPlannedDaysKm += daySummaries.get(dayKey(date))?.runKm ?? 0;
+          }
 
           return <Fragment key={weekKey}>
             <div className="col-span-7 mt-1 grid gap-1 rounded-md border border-[#ffffff0d] bg-[#ffffff06] px-2 py-1 text-xs tabular-nums text-[color:var(--soft)]">
@@ -117,6 +127,13 @@ export default function MonthDayCalendar({
                 )}
               </div>
               {comparison && <WeekVolumeComparison comparison={comparison} previousDeload={previousDeload} />}
+              {showRunning && plannedKm > 0 && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b6c5ff]"
+                  title="Факт Garmin за запланированные беговые дни этой календарной недели">
+                  <CalendarDays size={12} aria-hidden="true" />
+                  План {distance.format(plannedKm)} км · факт {distance.format(recordedOnPlannedDaysKm)} км
+                </span>
+              )}
               {labelError?.weekKey === weekKey && <p role="alert" className="text-xs text-rose-300">{labelError.message}</p>}
             </div>
             {week.days.map((date, weekday) => {
@@ -127,14 +144,22 @@ export default function MonthDayCalendar({
               const monthName = monthNames[month];
               const daily = daySummaries.get(dayKey(date)) || { runKm: 0, runCount: 0, strengthCount: 0 };
               const hasRun = showRunning && daily.runCount > 0;
-              const hasStrength = selectedTypes.includes("strength") && daily.strengthCount > 0;
+              const hasStrength = showStrength && daily.strengthCount > 0;
+              const plan = planByDate.get(localDateKey(date));
+              const plannedRun = showRunning && plan && plan.kind !== "strength";
+              const plannedStrength = showStrength && plan?.kind === "strength";
+              const planLabel = plannedRun
+                ? `План: ${plan.distance_km ? `${distance.format(plan.distance_km)} км` : plan.kind === "race" ? "забег" : "бег"}`
+                : plannedStrength ? "План: силовая тренировка" : "";
+              const showPlan = (plannedRun && !hasRun) || (plannedStrength && !hasStrength);
               const daySelected = selection.type === "day" && selection.year === year && selection.month === month && selection.day === day;
               return (
                 <button
                   className={`period-cube period-day-cube relative isolate flex min-w-0 min-h-[54px] flex-col items-center justify-end px-0.5 pb-2 pt-5 border border-[color:var(--border)] rounded-[9px] bg-[color:var(--panel)] text-[color:var(--text)] text-[14px] font-semibold text-center capitalize shadow-[0_3px_9px_#00000018] [&.has-run]:border-[#e5aa62] [&.has-run]:[background:linear-gradient(145deg,_#362923,_#1d262b_82%)] [&.is-selected]:border-[color:var(--accent)] [&.is-selected]:bg-[color:var(--accent-soft)] ${outsideMonth ? "opacity-35" : ""}${hasRun ? " has-run" : ""}${daySelected ? " is-selected" : ""}`}
                   type="button"
                   key={day}
-                  aria-label={`${day} ${monthName} ${year}${hasRun ? `, бег ${daily.runKm.toFixed(1)} км` : ""}${hasStrength ? ", силовая тренировка" : ""}`}
+                  title={planLabel || undefined}
+                  aria-label={`${day} ${monthName} ${year}${hasRun ? `, бег ${daily.runKm.toFixed(1)} км` : ""}${hasStrength ? ", силовая тренировка" : ""}${planLabel ? `, ${planLabel}` : ""}`}
                   onClick={() => onSelectDay({ year, month, day })}
                 >
                   <span aria-hidden="true" className={`pointer-events-none absolute right-1 top-0.5 bg-gradient-to-br bg-clip-text text-[15px] font-bold leading-none text-transparent ${weekday >= 5 ? "from-[#f3bc9a]/85 to-[#f3bc9a]/25" : "from-[#c2cfd4]/75 to-[#c2cfd4]/20"}`}>
@@ -147,6 +172,13 @@ export default function MonthDayCalendar({
                   )}
                   {hasStrength && !hasRun && (
                     <Dumbbell className="text-[#a7b5ff]" size={15} aria-hidden="true" />
+                  )}
+                  {showPlan && (
+                    <span aria-hidden="true" className="max-w-full whitespace-nowrap rounded-sm border border-dashed border-[#7c8fc4] px-0.5 text-[10px] font-semibold leading-tight text-[#b6c5ff] sm:px-1 sm:text-xs">
+                      {plan.distance_km ? (
+                        <>{distance.format(plan.distance_km)}<span className="max-[420px]:hidden"> км</span></>
+                      ) : <CalendarDays size={12} />}
+                    </span>
                   )}
                 </button>
               );
