@@ -11,6 +11,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from settings import settings
 from runner_plan import RunnerPlan
+from weather import add_weather_routes
 
 COOKIE = "garmin_session"
 SESSION_TTL = timedelta(days=7)
@@ -154,4 +155,5 @@ def account_routes(database, verify_key):
         await verify_key(provider, value)
         return {"ok": True}
 
+    add_weather_routes(router, database, current)
     return router, current

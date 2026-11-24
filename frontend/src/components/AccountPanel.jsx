@@ -1,3 +1,4 @@
+import WeatherSettings from "./WeatherSettings";
 import RunnerPlanForm from "./RunnerPlanForm";
 import { useEffect, useRef, useState } from "react";
 import { ChevronUp, Footprints, KeyRound, LogIn, LogOut, Settings2, UserPlus, X } from "lucide-react";
@@ -71,7 +72,7 @@ function KeySetting({ provider, label, configured, onChange }) {
   );
 }
 
-export default function AccountPanel({ account, onChange, onPlanSaved }) {
+export default function AccountPanel({ account, onChange, onPlanSaved, weatherLocation, onWeatherChange }) {
   const [mode, setMode] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -172,7 +173,7 @@ export default function AccountPanel({ account, onChange, onPlanSaved }) {
           </div>
         </div>}
       </dialog>
-      {account && mode === "settings" && <section className="mt-3 grid max-w-lg gap-4" aria-label="Настройки ключей">
+      {account && mode === "settings" && <section className="mt-3 grid max-w-lg gap-4" aria-label="Настройки аккаунта">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold">Ключи подключения</h2>
           <button className={button} onClick={() => open(null)}><ChevronUp size={15} />Свернуть</button>
@@ -181,6 +182,7 @@ export default function AccountPanel({ account, onChange, onPlanSaved }) {
           onChange={(garmin) => onChange({ ...account, garmin })} />
         <KeySetting provider="ai" label="GigaChat Authorization Key (необязательно)" configured={account.ai}
           onChange={(ai) => onChange({ ...account, ai })} />
+        <WeatherSettings key={account.id} location={weatherLocation} request={accountRequest} onChange={onWeatherChange} />
         <RunnerPlanForm key={account.id} request={accountRequest} onSaved={onPlanSaved} />
       </section>}
       {error && !authOpen && <p className="mt-2 text-rose-300" role="alert">{error}</p>}

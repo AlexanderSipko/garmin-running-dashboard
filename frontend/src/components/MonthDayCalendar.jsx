@@ -1,3 +1,4 @@
+import DayWeather, { weatherLabel } from "./DayWeather";
 import { Fragment, useState } from "react";
 import { CalendarDays, Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
 import { averageRunningPace, dayKey, weeklyVolumeComparison } from "../lib/calendarAnalytics";
@@ -70,7 +71,7 @@ function WeekVolumeComparison({ comparison, previousDeload }) {
 
 export default function MonthDayCalendar({
   expandedYear, calendarMonth, monthNames, daySummaries, selectedTypes, selection, onSelectDay,
-  deloadWeeks = {}, plannedSessions = [], onMarkDeload, syncBusy,
+  deloadWeeks = {}, plannedSessions = [], onMarkDeload, syncBusy, forecast,
 }) {
   const [pendingWeek, setPendingWeek] = useState(null);
   const [labelError, setLabelError] = useState(null);
@@ -191,7 +192,10 @@ export default function MonthDayCalendar({
               const daily = daySummaries.get(dayKey(date)) || { runKm: 0, runCount: 0, strengthCount: 0 };
               const hasRun = showRunning && daily.runCount > 0;
               const hasStrength = showStrength && daily.strengthCount > 0;
-              const plan = planByDate.get(localDateKey(date));
+              const dateKey = localDateKey(date);
+              const weather = forecast?.[dateKey];
+              const forecastLabel = weatherLabel(weather);
+              const plan = planByDate.get(dateKey);
               const plannedRun = showRunning && plan && plan.kind !== "strength";
               const plannedStrength = showStrength && plan?.kind === "strength";
               const planLabel = plannedRun
@@ -204,8 +208,8 @@ export default function MonthDayCalendar({
                   className={`period-cube period-day-cube relative isolate flex min-w-0 min-h-[54px] flex-col items-center justify-end px-0.5 pb-2 pt-5 border border-[color:var(--border)] rounded-[9px] bg-[color:var(--panel)] text-[color:var(--text)] text-[14px] font-semibold text-center capitalize shadow-[0_3px_9px_#00000018] [&.has-run]:border-[#e5aa62] [&.has-run]:[background:linear-gradient(145deg,_#362923,_#1d262b_82%)] [&.is-selected]:border-[color:var(--accent)] [&.is-selected]:bg-[color:var(--accent-soft)] ${outsideMonth ? "opacity-35" : ""}${hasRun ? " has-run" : ""}${daySelected ? " is-selected" : ""}`}
                   type="button"
                   key={day}
-                  title={planLabel || undefined}
-                  aria-label={`${day} ${monthName} ${year}${hasRun ? `, бег ${daily.runKm.toFixed(1)} км` : ""}${hasStrength ? ", силовая тренировка" : ""}${planLabel ? `, ${planLabel}` : ""}`}
+                  title={[planLabel, forecastLabel].filter(Boolean).join(" · ") || undefined}
+                  aria-label={`${day} ${monthName} ${year}${hasRun ? `, бег ${daily.runKm.toFixed(1)} км` : ""}${hasStrength ? ", силовая тренировка" : ""}${planLabel ? `, ${planLabel}` : ""}${forecastLabel ? `, ${forecastLabel}` : ""}`}
                   onClick={() => onSelectDay({ year, month, day })}
                 >
                   <span aria-hidden="true" className={`pointer-events-none absolute right-1 top-0.5 bg-gradient-to-br bg-clip-text text-[15px] font-bold leading-none text-transparent ${weekday >= 5 ? "from-[#f3bc9a]/85 to-[#f3bc9a]/25" : "from-[#c2cfd4]/75 to-[#c2cfd4]/20"}`}>
@@ -226,12 +230,18 @@ export default function MonthDayCalendar({
                       ) : <CalendarDays size={12} />}
                     </span>
                   )}
+                  {weather && <DayWeather day={weather} />}
                 </button>
               );
             })}
           </Fragment>;
         })}
       </div>
+      {calendarWeeks.some(({ days }) => days.some((day) => forecast?.[localDateKey(day)])) && (
+        <p className="mt-2 text-[11px] text-slate-400">
+          % — вероятность осадков · <a href="https://open-meteo.com/" target="_blank" rel="noreferrer" className="underline">Open-Meteo</a>
+        </p>
+      )}
     </div>
   );
 }

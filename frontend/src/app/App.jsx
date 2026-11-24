@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import AccountPanel, { accountRequest } from "../components/AccountPanel";
 import { ConnectionGuide, DemoIntro, guideHash } from "../components/DemoGuide";
 import CalendarPeriodExplorer from "../components/CalendarPeriodExplorer";
+import useWeatherForecast from "../hooks/useWeatherForecast";
 import useGarminDashboard from "../hooks/useGarminDashboard";
 
 const theme = "[background:var(--bg)] text-[color:var(--text)] [--bg:#141b20] [--panel:#1a242a] [--border:#303e46] [--text:#e3eaed] [--muted:#91a0a8] [--soft:#b8c5cb] [--accent:#eab16a] [--accent-soft:#332c23]";
 
-function Dashboard({ demo, account, planRevision }) {
+function Dashboard({ demo, account, planRevision, weather }) {
   const dashboard = useGarminDashboard(demo);
 
   return (
@@ -25,6 +26,7 @@ function Dashboard({ demo, account, planRevision }) {
         coachEnabled={Boolean(account?.ai)}
         syncedAt={dashboard.syncedAt}
         planRevision={planRevision}
+        weather={weather}
         wellness={dashboard.wellness}
         deloadWeeks={dashboard.deloadWeeks}
         plannedSessions={dashboard.plannedSessions}
@@ -40,6 +42,7 @@ export default function App() {
   const [account, setAccount] = useState(null);
   const [planRevision, setPlanRevision] = useState(0);
   const [pageHash, setPageHash] = useState(() => window.location.hash);
+  const { weather, changeLocation } = useWeatherForecast(account?.id, accountRequest);
   const showGuide = pageHash === guideHash;
 
   useEffect(() => {
@@ -60,11 +63,11 @@ export default function App() {
 
   return (
     <div className={theme}>
-      {!demoOnly && <AccountPanel account={account} onChange={setAccount} onPlanSaved={() => setPlanRevision((value) => value + 1)} />}
+      {!demoOnly && <AccountPanel account={account} weatherLocation={weather?.location} onWeatherChange={changeLocation} onChange={setAccount} onPlanSaved={() => setPlanRevision((value) => value + 1)} />}
       {showGuide ? <ConnectionGuide /> : (
         <>
           {!account && <DemoIntro />}
-          <Dashboard key={account?.id || "demo"} demo={!account} account={account} planRevision={planRevision} />
+          <Dashboard key={account?.id || "demo"} demo={!account} account={account} planRevision={planRevision} weather={weather} />
         </>
       )}
     </div>
