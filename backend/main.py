@@ -17,6 +17,7 @@ from accounts import account_routes, decrypt
 from coach import RunningCoach
 from coach_plan_dialog import TRAINING_TABLE, confirmed_plan_reply, is_plan_request, plan_move_reply
 from coach_context import activities_between, daily_coach_context, is_running, strength_summary, wellness_between
+from coach_history import chat_history_page
 from coach_tools import GarminCoachTools
 from dashboard_data import build_dashboard, merge_activities, monday_of, parse_date
 from providers.gigachat import GigaChatClient
@@ -610,8 +611,11 @@ def coach_summary(request: CoachPeriodRequest) -> dict[str, Any]:
 
 
 @app.get("/api/coach/chat")
-def coach_chat_history() -> dict[str, Any]:
-    return {"messages": read_store().get("coach_chat_history", [])[-COACH_CHAT_TURNS:]}
+def coach_chat_history(day: date | None = None, before: date | None = None) -> dict[str, Any]:
+    messages = read_store().get("coach_chat_history", [])[-COACH_CHAT_TURNS:]
+    if day is None:
+        return {"messages": messages}
+    return chat_history_page(messages, day, before)
 
 
 @app.post("/api/coach/chat")
@@ -649,12 +653,13 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
             result["answer"] = confirmed_plan_reply(active_plan, activities, today)
 
     focus_day = (request.focus_date or request.start_date).isoformat()
+    exchange_dates = {"focus_date": focus_day, "sent_day": today.isoformat()}
 
     def save_turns(store: dict[str, Any]) -> None:
         history = store.get("coach_chat_history", [])
         history.extend([
-            {"role": "user", "content": question, "focus_date": focus_day},
-            {"role": "assistant", "content": result["answer"], "usage": result["usage"], "focus_date": focus_day},
+            {"role": "user", "content": question, **exchange_dates},
+            {"role": "assistant", "content": result["answer"], "usage": result["usage"], **exchange_dates},
         ])
         store["coach_chat_history"] = history[-COACH_CHAT_TURNS:]
 

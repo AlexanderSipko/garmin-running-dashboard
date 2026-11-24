@@ -40,12 +40,15 @@ function useRunningCoach({
   active = true,
 }) {
   const [status, setStatus] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const [chat, setChat] = useState(null);
+  const [pendingQuestion, setPendingQuestion] = useState(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
   const focusDate = localDateKey(new Date(focusDay));
+  const todayChat = chat?.day === focusDate ? chat : null;
+  const messages = todayChat?.messages ?? [];
   const requestPeriod = useMemo(
     () => ({ ...buildRequestPeriod(period, periodStart, periodEnd), daily: true, focus_date: focusDate }),
     [period, periodStart, periodEnd, focusDate]
@@ -68,18 +71,26 @@ function useRunningCoach({
   }, [cacheKey]);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || chat?.day === focusDate) return;
     const controller = new AbortController();
     setHistoryLoading(true);
-    fetch("/api/coach/chat", { signal: controller.signal })
-      .then((response) => response.ok ? response.json() : null)
-      .then((result) => {
-        if (!controller.signal.aborted && Array.isArray(result?.messages)) setMessages(result.messages);
+    const query = new URLSearchParams({ day: focusDate });
+    fetch(`/api/coach/chat?${query}`, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Не удалось загрузить сегодняшнюю переписку.");
+        return response.json();
       })
-      .catch(() => {})
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setChat({ day: focusDate, messages: result.messages, hasHistory: result.has_history });
+        }
+      })
+      .catch((requestError) => {
+        if (!controller.signal.aborted) setError(requestError.message);
+      })
       .finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
     return () => controller.abort();
-  }, [active]);
+  }, [active, focusDate, chat?.day]);
 
   const refresh = () => {
     setError("");
@@ -90,29 +101,32 @@ function useRunningCoach({
     const cleanQuestion = question.trim();
     if (!cleanQuestion || sending || historyLoading) return;
 
-    setMessages((current) => [
-      ...current,
-      { role: "user", content: cleanQuestion, usage: null },
-    ]);
+    const userMessage = { role: "user", content: cleanQuestion, usage: null };
+    setPendingQuestion({ day: focusDate, message: userMessage });
     setSending(true);
     setError("");
 
     try {
       const result = await postJson("/api/coach/chat", {
         ...requestPeriod,
-        today: localDateKey(new Date()),
+        today: focusDate,
         question: cleanQuestion,
         summary: summary ? summary.slice(0, 1200) : null,
       });
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", content: result.answer, usage: result.usage },
-      ]);
+      setChat((current) => {
+        if (current && current.day > focusDate) return current;
+        const previous = current?.day === focusDate ? current : { day: focusDate, messages: [], hasHistory: true };
+        return {
+          ...previous,
+          messages: [...previous.messages, userMessage,
+            { role: "assistant", content: result.answer, usage: result.usage }],
+        };
+      });
       return result;
     } catch (requestError) {
-      setMessages((current) => current.slice(0, -1));
       setError(requestError.message);
     } finally {
+      setPendingQuestion(null);
       setSending(false);
     }
   };
@@ -133,10 +147,11 @@ function useRunningCoach({
     provider: status?.provider || "",
     summary,
     summaryUsage,
-    messages,
+    messages: pendingQuestion?.day === focusDate ? [...messages, pendingQuestion.message] : messages,
+    hasHistory: todayChat?.hasHistory,
     loadingSummary,
     sending,
-    historyLoading,
+    historyLoading: !todayChat && historyLoading,
     error: error || summaryError,
     totalTokens,
     ask,

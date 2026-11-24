@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Maximize2, Minimize2, ScanLine, Send, Sparkles, X } from "lucide-react";
+import CoachChatHistory, { CoachMessages } from "./CoachChatHistory";
+import { localDateKey } from "../lib/wellnessDates";
 import TrainingWeekPanel from "./TrainingWeekPanel";
 import useRunningCoach from "../hooks/useRunningCoach";
 
@@ -41,14 +43,6 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
       <TrainingWeekPanel active={active} today={focusDay} syncedAt={syncedAt}
         disabled={busy} onPlanVersion={setTrainingWeekId} onPlanChanged={onTrainingWeekChanged}
         moveProposal={moveProposal} onDismissMove={() => setMoveProposal(null)} />
-      {coach.messages.length > 0 && <div className="grid max-h-72 gap-2 overflow-y-auto" aria-live="polite">
-        {coach.messages.map((message, index) => (
-          <div key={index} className={`rounded-xl p-3 text-sm leading-relaxed ${message.role === "user" ? "bg-[#382e24]" : "bg-[#172229]"}`}>
-            <b className="text-xs text-[#f3bc7f]">{message.role === "user" ? "Ты" : "Консультант"}</b>
-            <p className="mt-1 whitespace-pre-wrap break-words">{message.content}</p>
-          </div>
-        ))}
-      </div>}
       <form className="grid grid-cols-[minmax(0,1fr)_40px] gap-2" onSubmit={submit}>
         <input aria-label="Самочувствие или вопрос консультанту" className="min-w-0 rounded-lg border border-[#415157] bg-[#172229] px-3 py-2 text-sm"
           value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={1200}
@@ -60,7 +54,14 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
       </form>
       {coach.error && <p role="alert" className="text-sm text-rose-300">{coach.error}</p>}
       {coach.unavailable && <p className="text-sm text-rose-300">Консультация сейчас недоступна.</p>}
-      {coach.totalTokens > 0 && <p className="text-xs text-slate-400">{coach.totalTokens.toLocaleString("ru-RU")} токенов</p>}
+      {coach.totalTokens > 0 && <p className="text-xs text-slate-400">{coach.totalTokens.toLocaleString("ru-RU")} токенов сегодня</p>}
+      {coach.messages.length > 0 && (
+        <section className="grid gap-2" aria-live="polite">
+          <h3 className="text-sm font-semibold text-slate-300">Сегодня</h3>
+          <CoachMessages messages={coach.messages} />
+        </section>
+      )}
+      {coach.hasHistory && <CoachChatHistory day={localDateKey(focusDay)} active={active} />}
     </div>
   );
 }
