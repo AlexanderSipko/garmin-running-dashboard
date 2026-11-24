@@ -19,7 +19,7 @@ from coach_plan_dialog import TRAINING_TABLE, confirmed_plan_reply, is_plan_requ
 from coach_context import activities_between, daily_coach_context, is_running, strength_summary, wellness_between
 from coach_history import chat_history_page
 from coach_tools import GarminCoachTools
-from dashboard_data import build_dashboard, merge_activities, monday_of, parse_date
+from dashboard_data import build_dashboard, dashboard_weekly_volume, merge_activities, monday_of, parse_date
 from providers.gigachat import GigaChatClient
 from providers.gigachat import GigaChatError
 from request_security import check_origin, validation_error
@@ -288,7 +288,7 @@ def analyze_period(
         )
 
         if error_code == "ca_bundle_missing":
-            detail = "Не найден сертификат GigaChat: положи корневой сертификат Минцифры в папку certs проекта."
+            detail = "Не найден сертификат GigaChat. Проверь путь GIGACHAT_CA_BUNDLE на сервере."
         elif status_code == 401:
             detail = "GigaChat отклонил ключ авторизации. Проверь ключ в настройках аккаунта и scope сервера."
         elif status_code == 403:
@@ -815,9 +815,10 @@ async def activity_detail(
     fields.pop("id", None)
 
     updated_activity = None
+    weekly_volume = None
 
     def replace_activity(store: dict[str, Any]) -> None:
-        nonlocal updated_activity
+        nonlocal updated_activity, weekly_volume
         rows = store.get("activities", [])
         for index, previous in enumerate(rows):
             if str(previous.get("id")) == activity_key:
@@ -827,6 +828,11 @@ async def activity_detail(
                     rows.sort(key=lambda row: str(row.get("start_time") or ""), reverse=True)
                     store["review_revision"] = store.get("review_revision", 0) + 1
                     store.pop("coach_daily", None)
+                    if any(updated_activity.get(field) != previous.get(field) for field in (
+                        "distance_meters", "start_time", "type",
+                    )):
+                        today = date.today()
+                        weekly_volume = dashboard_weekly_volume(rows, today, today - timedelta(days=3649))
                 return
         raise HTTPException(404, "Тренировка больше не найдена в истории.")
 
@@ -843,6 +849,7 @@ async def activity_detail(
         "details_saved": True,
         "activity": updated_activity,
         "description": updated_activity.get("description"),
+        "weekly_volume": weekly_volume,
     }
 
 

@@ -10,10 +10,10 @@ services:
       PASSWORD_RESET_FROM: ${PASSWORD_RESET_FROM:-}
       GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
       GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat-2}
-      GIGACHAT_CA_BUNDLE: ${GIGACHAT_CA_BUNDLE:-}
+      GIGACHAT_CA_BUNDLE: ${GIGACHAT_CA_BUNDLE:-/app/certs/russian_trusted_root_ca_pem.crt}
     volumes:
       - ./backend/data:/app/data
-      - ./certs:/app/certs:ro
+      - ./backend/providers/certs:/app/certs:ro
     expose:
       - "8000"
   frontend:

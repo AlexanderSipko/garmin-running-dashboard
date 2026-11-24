@@ -1,7 +1,9 @@
 """Pure dashboard aggregation and activity merging."""
 
 import json
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from statistics import median
 from typing import Any
 
 from activity_metrics import activity_kind
@@ -49,6 +51,70 @@ def parse_date(value: str | None) -> date | None:
 
 def monday_of(day: date) -> date:
     return day - timedelta(days=day.weekday())
+
+
+@dataclass
+class RunningWeek:
+    km: float = 0
+    runs: int = 0
+    longest_km: float = 0
+
+
+def running_week_history(activities: list[dict], through: date) -> tuple[date | None, dict[date, RunningWeek]]:
+    first_day = None
+    weeks: dict[date, RunningWeek] = {}
+    for activity in activities:
+        day = parse_date(activity.get("start_time"))
+        if day is None or day > through:
+            continue
+        if first_day is None or day < first_day:
+            first_day = day
+        if activity_kind(activity) != "run":
+            continue
+        km = float(activity.get("distance_meters") or 0) / 1000
+        if km <= 0:
+            continue
+        week = weeks.setdefault(monday_of(day), RunningWeek())
+        week.km += km
+        week.runs += 1
+        week.longest_km = max(week.longest_km, km)
+    return first_day, weeks
+
+
+def completed_running_weeks(first_day: date | None, week_start: date) -> list[date]:
+    if first_day is None:
+        return []
+    candidates = [week_start - timedelta(weeks=offset) for offset in range(6, 0, -1)]
+    return [monday for monday in candidates if monday >= first_day]
+
+
+def weekly_volume_reference(
+    first_day: date | None, weeks: dict[date, RunningWeek], week_start: date,
+) -> dict:
+    completed = completed_running_weeks(first_day, week_start)
+    if not completed:
+        return {"previous_km": None, "typical_km": None, "weeks": 0}
+    empty = RunningWeek()
+    return {
+        "previous_km": weeks.get(completed[-1], empty).km,
+        "typical_km": median(weeks.get(monday, empty).km for monday in completed),
+        "weeks": len(completed),
+    }
+
+
+def dashboard_weekly_volume(activities: list[dict], today: date, start: date) -> dict:
+    first_day, weeks = running_week_history(activities, today)
+    if first_day is None:
+        return {}
+    first_week = monday_of(max(first_day, start))
+    volume = {}
+    last_week = monday_of(today)
+    for offset in range((last_week - first_week).days // 7 + 1):
+        monday = first_week + timedelta(weeks=offset)
+        reference = weekly_volume_reference(first_day, weeks, monday)
+        if reference["weeks"]:
+            volume[monday.isoformat()] = reference
+    return volume
 
 
 def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> dict[str, Any]:
@@ -148,6 +214,7 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
             "this_week_runs": week_runs,
         },
         "weekly": weekly,
+        "weekly_volume": dashboard_weekly_volume(store.get("activities", []), today, start_date),
         "deload_weeks": store.get("deload_weeks", {}),
         "planned_sessions": planned_sessions,
         "activities": activities[:5000],

@@ -90,7 +90,7 @@ function percentChange(km, referenceKm) {
   return referenceKm > 0 ? km / referenceKm - 1 : null;
 }
 
-export function weeklyVolumeComparison(daySummaries, weekStart, totalKm, historyStart) {
+export function demoWeeklyVolumeReference(daySummaries, weekStart, historyStart) {
   const previousMonday = shiftDays(weekStart, -7);
   const sixWeeksAgo = shiftDays(weekStart, -42);
   const previousKm = historyStart && previousMonday >= historyStart
@@ -104,11 +104,17 @@ export function weeklyVolumeComparison(daySummaries, weekStart, totalKm, history
     typicalKm = (weeks[2] + weeks[3]) / 2;
   }
 
+  return { previous_km: previousKm, typical_km: typicalKm, weeks: typicalKm == null ? 0 : 6 };
+}
+
+export function weeklyVolumeComparison(reference, totalKm) {
+  if (!reference) return null;
+  const { previous_km: previousKm, typical_km: typicalKm, weeks } = reference;
   return {
-    previousMonday,
     previousKm,
-    previousChange: percentChange(totalKm, previousKm),
     typicalKm,
+    weeks,
+    previousChange: percentChange(totalKm, previousKm),
     typicalChange: percentChange(totalKm, typicalKm),
   };
 }

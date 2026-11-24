@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowUpRight, ChevronDown, Copy, Dumbbell, Footprints } from "lucide-react";
 import { getActivityCategory, getActivityDate } from "../lib/calendarAnalytics";
 import { fmtDuration } from "../lib/format";
 import { PageLink } from "../app/DashboardRouter";
 import RefreshActivityButton from "./RefreshActivityButton";
+import { copyText } from "../lib/copyText";
 import { dayPath } from "../lib/dashboardRoutes";
 
 const filters = [["all", "Все"], ["running", "Бег"], ["strength", "Силовые"]];
@@ -14,24 +15,14 @@ const control = "rounded-lg border border-[#42535b] px-3 py-2 text-sm font-semib
 
 function Description({ activity, strength, demo, onActivityUpdated }) {
   const [notice, setNotice] = useState("");
-  const copyText = useRef(null);
+  const [manualCopy, setManualCopy] = useState(false);
   const text = activity.description?.trim() || "";
   const duration = activity.moving_duration_seconds || activity.duration_seconds;
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setNotice("Описание скопировано.");
-    } catch {
-      const selection = window.getSelection();
-      if (selection && copyText.current) {
-        const range = document.createRange();
-        range.selectNodeContents(copyText.current);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-      setNotice("Описание выделено. Скопируй его вручную.");
-    }
+    const copied = await copyText(text);
+    setManualCopy(!copied);
+    setNotice(copied ? "Описание скопировано." : "Нажми и удерживай текст в поле, затем выбери «Копировать».");
   }
 
   return (
@@ -43,11 +34,16 @@ function Description({ activity, strength, demo, onActivityUpdated }) {
         </div>
       )}
       {!text && <p className="text-slate-400">Сохранённого описания пока нет.</p>}
-      {text && <p ref={copyText} className="whitespace-pre-wrap break-words leading-relaxed text-slate-100">{text}</p>}
+      {text && (manualCopy ? (
+        <textarea aria-label="Описание для копирования" readOnly rows={5} value={text}
+          onFocus={(event) => event.target.select()}
+          className="w-full min-w-0 rounded-lg border border-[#536671] bg-[#152128] p-3 text-base text-slate-100" />
+      ) : <p className="whitespace-pre-wrap break-words leading-relaxed text-slate-100">{text}</p>)}
       <div className="flex flex-wrap items-center gap-2">
-        {!demo && <RefreshActivityButton activityId={activity.id} strength={strength} onActivityUpdated={(updated) => {
+        {!demo && <RefreshActivityButton activityId={activity.id} strength={strength} onActivityUpdated={(updated, weeklyVolume) => {
           setNotice("");
-          onActivityUpdated(updated);
+          setManualCopy(false);
+          onActivityUpdated(updated, weeklyVolume);
         }} />}
         {text && <button type="button" className={`${control} inline-flex items-center gap-2`} onClick={copy}><Copy size={14} aria-hidden="true" /> Скопировать описание</button>}
         <PageLink className={`${control} inline-flex items-center gap-2`} to={dayPath(String(activity.start_time).slice(0, 10))}>

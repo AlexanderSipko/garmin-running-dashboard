@@ -31,7 +31,7 @@ const monthShortNames = Array.from({ length: 12 }, (_, month) =>
 
 function CalendarPeriodExplorer({
   activities, pagePath, busy, error, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
-  planRevision, weather, weatherRequest, onWeatherChange, deloadWeeks, plannedSessions, onTrainingWeekChanged, onMarkDeload,
+  planRevision, weather, weatherRequest, onWeatherChange, deloadWeeks, weeklyVolume, plannedSessions, onTrainingWeekChanged, onMarkDeload,
 }) {
   const detailCache = useRef(new Map()).current;
   const linkedDetails = useRef(null);
@@ -549,6 +549,8 @@ function CalendarPeriodExplorer({
             selection={selection}
             onSelectDay={selectDay}
             deloadWeeks={deloadWeeks}
+            weeklyVolume={weeklyVolume}
+            publicDemo={publicDemo}
             plannedSessions={plannedSessions}
             onMarkDeload={onMarkDeload}
             syncBusy={busy}

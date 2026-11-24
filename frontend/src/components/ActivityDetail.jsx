@@ -1,6 +1,7 @@
 import SectionEyebrow from "./SectionEyebrow";
 import { useEffect, useState } from "react";
 import { Clock3, Footprints, Gauge, Heart, RefreshCw, Route } from "lucide-react";
+import { requestActivityDetails } from "../lib/activityDetailsRequest";
 import { fmtDate, fmtDuration, fmtPace } from "../lib/format";
 import { getActivityCategory } from "../lib/calendarAnalytics";
 import StrengthActivity from "./StrengthActivity";
@@ -58,30 +59,11 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
     setDetailLoading(true);
     setDetailError("");
 
-    async function requestDetails(method, query = "") {
-      const response = await fetch(`/api/activities/${activityId}/detail${query}`, {
-        method,
-        signal,
-        cache: "no-store",
-      });
-      const result = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message = typeof result?.detail === "string"
-          ? result.detail
-          : `Не удалось получить детали тренировки (HTTP ${response.status}). Попробуй ещё раз.`;
-        throw new Error(message);
-      }
-      if (!result || typeof result !== "object") {
-        throw new Error("Сервер вернул неожиданный ответ. Попробуй обновить детали ещё раз.");
-      }
-      return result;
-    }
-
     async function loadDetails() {
-      if (refreshCount > 0) return requestDetails("POST");
-      const saved = await requestDetails("GET");
+      if (refreshCount > 0) return requestActivityDetails(activityId, { method: "POST", signal });
+      const saved = await requestActivityDetails(activityId, { signal });
       if (saved.details_saved || signal.aborted) return saved;
-      return requestDetails("POST", "?only_if_missing=true");
+      return requestActivityDetails(activityId, { method: "POST", onlyIfMissing: true, signal });
     }
 
     loadDetails()
@@ -99,7 +81,7 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
         };
         detailCache.set(activityId, cleanDetail);
         setDetail(cleanDetail);
-        if (result.activity) onActivityUpdated(result.activity);
+        if (result.activity) onActivityUpdated(result.activity, result.weekly_volume);
       })
       .catch((error) => {
         if (!signal.aborted) setDetailError(error.message);

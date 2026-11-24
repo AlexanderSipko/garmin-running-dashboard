@@ -9,7 +9,9 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from activity_metrics import activity_kind
-from dashboard_data import monday_of, parse_date
+from dashboard_data import (
+    RunningWeek, completed_running_weeks, monday_of, parse_date, running_week_history, weekly_volume_reference,
+)
 
 RUN_KINDS = {"easy", "recovery", "long", "tempo", "intervals", "quality", "race"}
 SESSION_DESCRIPTION_LIMIT = 500
@@ -37,38 +39,17 @@ def draft_start(activities: list[dict], today: date) -> date:
 
 def recent_training_load(activities: list[dict], today: date) -> dict:
     current_monday = monday_of(today)
+    first_day, weeks = running_week_history(activities, today)
+    completed = completed_running_weeks(first_day, current_monday)
+    reference = weekly_volume_reference(first_day, weeks, current_monday)
     start = current_monday - timedelta(weeks=6)
-    first_date = None
-    weekly_km: dict[date, float] = {}
-    weekly_count: dict[date, int] = {}
-    longest_km = 0.0
-    for row in activities:
-        day = parse_date(row.get("start_time"))
-        if day is None or day > today:
-            continue
-        if first_date is None or day < first_date:
-            first_date = day
-        if day < start or activity_kind(row) != "run":
-            continue
-        km = float(row.get("distance_meters") or 0) / 1000
-        if km <= 0:
-            continue
-        monday = monday_of(day)
-        weekly_km[monday] = weekly_km.get(monday, 0.0) + km
-        weekly_count[monday] = weekly_count.get(monday, 0) + 1
-        longest_km = max(longest_km, km)
-
-    completed = [start + timedelta(weeks=index) for index in range(6)]
-    covered = [week for week in completed if first_date is not None and week >= first_date]
-    if not covered:
-        covered = sorted(weekly_km)
-    typical_km = median(weekly_km.get(week, 0) for week in covered) if covered else 0
-    typical_runs = median(weekly_count.get(week, 0) for week in covered) if covered else 0
+    recent = {monday: week for monday, week in weeks.items() if monday >= start}
+    empty = RunningWeek()
     return {
-        "typical_km": typical_km,
-        "typical_runs": typical_runs,
-        "longest_km": longest_km,
-        "last_run_week": max(weekly_km, default=None),
+        "typical_km": reference["typical_km"],
+        "typical_runs": median(weeks.get(monday, empty).runs for monday in completed) if completed else 0,
+        "longest_km": max((week.longest_km for week in recent.values()), default=0),
+        "last_run_week": max(recent, default=None),
     }
 
 

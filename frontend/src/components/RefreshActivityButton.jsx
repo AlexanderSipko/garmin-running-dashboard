@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { refreshActivityDetails } from "../lib/activityDetailsRequest";
 
 export default function RefreshActivityButton({ activityId, strength, onActivityUpdated }) {
   const [busy, setBusy] = useState(false);
@@ -11,13 +12,8 @@ export default function RefreshActivityButton({ activityId, strength, onActivity
     setBusy(true);
     setFeedback(null);
     try {
-      const endpoint = strength ? "strength-refresh" : "detail";
-      const response = await fetch(`/api/activities/${activityId}/${endpoint}`, { method: "POST" });
-      const result = await response.json().catch(() => null);
-      if (!response.ok || !result?.activity) {
-        throw new Error(typeof result?.detail === "string" ? result.detail : "Не удалось обновить тренировку из Garmin.");
-      }
-      onActivityUpdated(result.activity);
+      const result = await refreshActivityDetails(activityId, strength);
+      onActivityUpdated(result.activity, result.weekly_volume);
       setFeedback({ text: "Данные Garmin обновлены." });
     } catch (failure) {
       setFeedback({ text: failure.message, error: true });

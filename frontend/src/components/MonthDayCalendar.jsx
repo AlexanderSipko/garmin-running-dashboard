@@ -1,7 +1,7 @@
 import DayWeather, { weatherLabel } from "./DayWeather";
 import { Fragment, useState } from "react";
 import { CalendarDays, Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
-import { averageRunningPace, dayKey, weeklyVolumeComparison } from "../lib/calendarAnalytics";
+import { averageRunningPace, dayKey, demoWeeklyVolumeReference, weeklyVolumeComparison } from "../lib/calendarAnalytics";
 import { fmtPace } from "../lib/format";
 import { localDateKey } from "../lib/wellnessDates";
 
@@ -35,7 +35,7 @@ function ComparisonItem({ label, km, change, markedDeload, title, className = ""
 }
 
 function WeekVolumeComparison({ comparison, previousDeload }) {
-  const { previousKm, previousChange, typicalKm, typicalChange } = comparison;
+  const { previousKm, previousChange, typicalKm, typicalChange, weeks } = comparison;
   if (previousKm == null) return null;
 
   return (
@@ -49,13 +49,13 @@ function WeekVolumeComparison({ comparison, previousDeload }) {
         <ComparisonItem
           label={typicalChange == null ? "Типичная неделя" : "К типичной"}
           km={typicalKm} change={typicalChange}
-          title="Медиана километража за 6 предыдущих завершённых недель"
+          title={`Медиана километража. Завершённых недель в расчёте: ${weeks}`}
         />
       )}
       {previousDeload ? (
         typicalKm > 0 ? (
           <ComparisonItem label="Ориентир" km={typicalKm} className="col-start-3"
-            title="После разгрузки ориентир — медиана шести завершённых недель" />
+            title="После разгрузки ориентир берётся по завершённым неделям" />
         ) : (
           <div className="col-start-3 text-[#adbbc0]"><dt>Ориентир</dt><dd>Мало данных</dd></div>
         )
@@ -71,7 +71,7 @@ function WeekVolumeComparison({ comparison, previousDeload }) {
 
 export default function MonthDayCalendar({
   expandedYear, calendarMonth, monthNames, daySummaries, selectedTypes, selection, onSelectDay,
-  deloadWeeks = {}, plannedSessions = [], onMarkDeload, syncBusy, forecast,
+  deloadWeeks = {}, plannedSessions = [], onMarkDeload, syncBusy, forecast, weeklyVolume, publicDemo,
 }) {
   const [pendingWeek, setPendingWeek] = useState(null);
   const [labelError, setLabelError] = useState(null);
@@ -81,10 +81,12 @@ export default function MonthDayCalendar({
   const showStrength = selectedTypes.includes("strength");
   const planByDate = new Map(plannedSessions.map((session) => [session.date, session]));
   let historyStart = null;
-  for (const key of daySummaries.keys()) {
-    const [year, month, day] = key.split("-").map(Number);
-    const date = new Date(year, month, day);
-    if (!historyStart || date < historyStart) historyStart = date;
+  if (publicDemo) {
+    for (const key of daySummaries.keys()) {
+      const [year, month, day] = key.split("-").map(Number);
+      const date = new Date(year, month, day);
+      if (!historyStart || date < historyStart) historyStart = date;
+    }
   }
 
   async function toggleDeload(weekKey, enabled) {
@@ -122,10 +124,12 @@ export default function MonthDayCalendar({
           const weekKey = localDateKey(weekStart);
           const markedDeload = Boolean(deloadWeeks[weekKey]);
           const currentWeek = weekStart <= today && today < nextMonday;
-          const comparison = showRunning && weekStart <= today
-            ? weeklyVolumeComparison(daySummaries, weekStart, weekKm, historyStart)
-            : null;
-          const previousDeload = comparison && Boolean(deloadWeeks[localDateKey(comparison.previousMonday)]);
+          const reference = publicDemo && showRunning && weekStart <= today
+            ? demoWeeklyVolumeReference(daySummaries, weekStart, historyStart)
+            : weeklyVolume?.[weekKey];
+          const comparison = showRunning ? weeklyVolumeComparison(reference, weekKm) : null;
+          const previousMonday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() - 7);
+          const previousDeload = Boolean(deloadWeeks[localDateKey(previousMonday)]);
           let plannedKm = 0;
           let recordedOnPlannedDaysKm = 0;
           for (const date of week.days) {

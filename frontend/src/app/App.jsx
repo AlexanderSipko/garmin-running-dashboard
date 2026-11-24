@@ -43,6 +43,7 @@ function Dashboard({ demo, account, planRevision, weather, onWeatherChange, page
           onWeatherChange={onWeatherChange}
           wellness={dashboard.wellness}
           deloadWeeks={dashboard.deloadWeeks}
+          weeklyVolume={dashboard.weeklyVolume}
           plannedSessions={dashboard.plannedSessions}
           onTrainingWeekChanged={dashboard.replaceTrainingWeek}
           onMarkDeload={dashboard.markDeloadWeek}
