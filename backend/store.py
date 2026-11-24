@@ -67,6 +67,42 @@ class Database:
                 )
             """)
 
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS auth_attempts (
+                    bucket_key TEXT PRIMARY KEY,
+                    attempts INTEGER NOT NULL,
+                    expires_at BIGINT NOT NULL
+                )
+            """)
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS auth_attempts_expiration ON auth_attempts (expires_at)"
+            )
+
+    def consume_auth_attempt(
+        self, bucket_key: str, *, now: int, window: int, limit: int,
+    ) -> int:
+        """Reserve an attempt atomically. Return the wait in seconds if the bucket is full."""
+        mark = self.json_parameter()
+        with self.transaction() as connection:
+            connection.execute(f"DELETE FROM auth_attempts WHERE expires_at <= {mark}", (now,))
+            accepted = connection.execute(
+                f"""
+                INSERT INTO auth_attempts (bucket_key, attempts, expires_at)
+                VALUES ({mark}, 1, {mark})
+                ON CONFLICT (bucket_key) DO UPDATE
+                SET attempts = auth_attempts.attempts + 1
+                WHERE auth_attempts.attempts < {mark}
+                RETURNING bucket_key
+                """,
+                (bucket_key, now + window, limit),
+            ).fetchone()
+            if accepted:
+                return 0
+            expires_at, = connection.execute(
+                f"SELECT expires_at FROM auth_attempts WHERE bucket_key = {mark}", (bucket_key,)
+            ).fetchone()
+            return max(1, expires_at - now)
+
     def register_user(self, email: str, password_hash: str) -> str | None:
         user_id = secrets.token_urlsafe(18)
         with self.transaction() as connection:

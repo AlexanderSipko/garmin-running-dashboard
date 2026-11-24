@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import secrets
+from time import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -70,9 +71,22 @@ def account_routes(database, verify_key):
                             max_age=int(SESSION_TTL.total_seconds()))
         return {"id": user_id, "email": email}
 
+    def limit_attempts(action: str, email: str, limit: int) -> None:
+        retry_after = database.consume_auth_attempt(
+            f"{action}:{token_digest(email)}", now=int(time()), window=600, limit=limit,
+        )
+        if retry_after:
+            minutes = (retry_after + 59) // 60
+            raise HTTPException(
+                429,
+                f"Слишком много попыток. Повтори через {minutes} мин.",
+                headers={"Retry-After": str(retry_after)},
+            )
+
     @router.post("/register")
     def register(body: Credentials, request: Request, response: Response):
         email = body.email.lower()
+        limit_attempts("register", email, 3)
         salt = secrets.token_bytes(16)
         user_id = database.register_user(email, salt.hex() + ":" + password_digest(body.password, salt))
         if user_id is None:
@@ -82,6 +96,7 @@ def account_routes(database, verify_key):
     @router.post("/login")
     def login(body: Credentials, request: Request, response: Response):
         email = body.email.lower()
+        limit_attempts("login", email, 8)
         row = database.find_user(email)
         salt, expected = row[1].split(":") if row else ("00" * 16, "00" * 64)
         verified = hmac.compare_digest(password_digest(body.password, bytes.fromhex(salt)), expected)

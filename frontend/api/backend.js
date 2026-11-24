@@ -29,6 +29,8 @@ export default async function handler(req, res) {
       redirect: "manual",
       signal: AbortSignal.timeout(55_000),
     });
+    const retryAfter = response.headers.get("retry-after");
+    if (retryAfter) res.setHeader("Retry-After", retryAfter);
     const cookies = response.headers.getSetCookie();
     if (cookies.length) res.setHeader("Set-Cookie", cookies);
     res.setHeader("Content-Type", response.headers.get("content-type") || "application/json");
