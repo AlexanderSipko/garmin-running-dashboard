@@ -14,41 +14,47 @@ const theme = "[background:var(--bg)] text-[color:var(--text)] [--bg:#141b20] [-
 function Dashboard({ demo, account, planRevision, weather, onWeatherChange, pagePath }) {
   const dashboard = useGarminDashboard(demo);
 
+  let content;
   if (pagePath === workoutsPath) {
-    return <WorkoutHistory activities={dashboard.activities} loading={dashboard.loading} error={dashboard.error} demo={demo} />;
-  }
-
-  if (dashboard.loading) {
-    return <p role="status" className="mx-auto max-w-4xl px-4 py-8 text-sm text-slate-300">Загружаю личные данные…</p>;
+    content = <WorkoutHistory activities={dashboard.activities} loading={dashboard.loading} error={dashboard.error} demo={demo} />;
+  } else if (dashboard.loading) {
+    content = <p role="status" className="mx-auto max-w-4xl px-4 py-8 text-sm text-slate-300">Загружаю личные данные…</p>;
+  } else {
+    content = (
+      <main className={[
+        "app theme-calendar period-explorer-app mx-auto w-full max-w-[none] min-h-screen p-0",
+        "max-[760px]:pt-0 px-4 pb-[18px] max-[760px]:[&.period-explorer-app]:p-0 max-[760px]:[.app&]:p-0",
+        "max-[420px]:pl-3 max-[420px]:pr-3",
+      ].join(" ")}>
+        <CalendarPeriodExplorer
+          activities={dashboard.activities}
+          pagePath={pagePath}
+          onActivityUpdated={dashboard.replaceActivity}
+          busy={dashboard.busy}
+          error={dashboard.error}
+          publicDemo={demo}
+          coachEnabled={Boolean(account?.ai)}
+          syncedAt={dashboard.syncedAt}
+          planRevision={planRevision}
+          weather={weather}
+          weatherRequest={accountRequest}
+          onWeatherChange={onWeatherChange}
+          wellness={dashboard.wellness}
+          deloadWeeks={dashboard.deloadWeeks}
+          plannedSessions={dashboard.plannedSessions}
+          onTrainingWeekChanged={dashboard.replaceTrainingWeek}
+          onMarkDeload={dashboard.markDeloadWeek}
+        />
+      </main>
+    );
   }
 
   return (
-    <main className={[
-      "app theme-calendar period-explorer-app mx-auto w-full max-w-[none] min-h-screen p-0",
-      "max-[760px]:pt-0 px-4 pb-[18px] max-[760px]:[&.period-explorer-app]:p-0 max-[760px]:[.app&]:p-0",
-      "max-[420px]:pl-3 max-[420px]:pr-3",
-    ].join(" ")}>
-      <CalendarPeriodExplorer
-        activities={dashboard.activities}
-        pagePath={pagePath}
-        onActivityUpdated={dashboard.replaceActivity}
-        busy={dashboard.busy}
-        error={dashboard.error}
-        onSync={account?.garmin ? dashboard.sync : undefined}
-        publicDemo={demo}
-        coachEnabled={Boolean(account?.ai)}
-        syncedAt={dashboard.syncedAt}
-        planRevision={planRevision}
-        weather={weather}
-        weatherRequest={accountRequest}
-        onWeatherChange={onWeatherChange}
-        wellness={dashboard.wellness}
-        deloadWeeks={dashboard.deloadWeeks}
-        plannedSessions={dashboard.plannedSessions}
-        onTrainingWeekChanged={dashboard.replaceTrainingWeek}
-        onMarkDeload={dashboard.markDeloadWeek}
-      />
-    </main>
+    <>
+      {content}
+      <DashboardFooter currentPath={pagePath} onSync={account?.garmin ? dashboard.sync : undefined}
+        syncing={dashboard.busy} loading={dashboard.loading} />
+    </>
   );
 }
 
@@ -110,7 +116,6 @@ function DashboardApp() {
           {!account && pagePath !== workoutsPath && <DemoIntro />}
           <Dashboard key={account?.id || "demo"} demo={!account} account={account} planRevision={planRevision}
             weather={weather} onWeatherChange={changeLocation} pagePath={pagePath} />
-          <DashboardFooter currentPath={pagePath} />
         </>
       )}
     </div>

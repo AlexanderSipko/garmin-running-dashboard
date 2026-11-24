@@ -6,7 +6,6 @@ import {
   Footprints,
   Gauge,
   HeartPulse,
-  Watch,
 } from "lucide-react";
 import { dayFromPath } from "../lib/dashboardRoutes";
 import { localDateKey } from "../lib/wellnessDates";
@@ -31,7 +30,7 @@ const monthShortNames = Array.from({ length: 12 }, (_, month) =>
 );
 
 function CalendarPeriodExplorer({
-  activities, pagePath, busy, error, onSync, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
+  activities, pagePath, busy, error, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
   planRevision, weather, weatherRequest, onWeatherChange, deloadWeeks, plannedSessions, onTrainingWeekChanged, onMarkDeload,
 }) {
   const detailCache = useRef(new Map()).current;
@@ -169,26 +168,6 @@ function CalendarPeriodExplorer({
   return (
     <main className="period-explorer grid grid-cols-[minmax(205px,_245px)_minmax(0,_1fr)_minmax(270px,_300px)] min-h-screen max-[760px]:grid-cols-[minmax(0,_1fr)] max-[760px]:overflow-x-clip">
       <aside className="period-explorer-sidebar min-w-0 self-start min-[761px]:sticky min-[761px]:top-0 min-[761px]:max-h-dvh min-[761px]:overflow-y-auto px-3 pb-4 [border-right:1px_solid_var(--border)] max-[760px]:px-3 max-[760px]:border-r-0" aria-label="Выбор даты">
-        {onSync && <button
-          className={[
-            "period-sync-button mb-3 flex min-h-[34px] w-full items-center justify-center gap-2 px-2 text-[12px] font-semibold",
-            "[border:1px_solid_#354c3d] rounded-[10px] [background:linear-gradient(145deg,_#1c2a22,_#151d19)]",
-            "[box-shadow:inset_0_1px_#ffffff0a] text-[color:#d6f5df]",
-            "[transition:border-color_140ms_ease,_box-shadow_140ms_ease,_transform_140ms_ease]",
-            "[&:hover:not(:disabled)]:[transform:translateY(-1px)]",
-            "[&:hover:not(:disabled)]:border-[color:#79b48a]",
-            "[&:hover:not(:disabled)]:[box-shadow:0_0_12px_#5aa16d2e] [&_svg]:text-[color:#a8e8b7]",
-            "[&:disabled]:cursor-wait [&:disabled]:opacity-[0.7]",
-          ].join(" ")}
-          type="button"
-          onClick={onSync}
-          disabled={busy}
-          aria-label={busy ? "Синхронизация с Garmin" : "Обновить данные Garmin"}
-          title={busy ? "Синхронизация с Garmin" : "Обновить данные Garmin"}
-        >
-          <Watch className={busy ? "is-spinning [.period-sync-button_&]:animate-spin" : ""} size={16} />
-          {busy ? "Обновляю…" : "Обновить Garmin"}
-        </button>}
         {error && <div className="period-sync-error mt-[-2px] mx-0 mb-[9px] text-[color:#ff9a91] text-[12px]">{error}</div>}
 
         <button type="button" aria-expanded={yearsOpen} aria-controls="calendar-years"
