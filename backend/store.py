@@ -78,6 +78,89 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS auth_attempts_expiration ON auth_attempts (expires_at)"
             )
 
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS password_resets (
+                    token_hash TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    expires_at BIGINT NOT NULL
+                )
+            """)
+            connection.execute("CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets (user_id)")
+
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS recovery_owners (
+                    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
+
+    def is_recovery_owner(self, user_id: str) -> bool:
+        with self.transaction() as connection:
+            row = connection.execute(
+                f"SELECT 1 FROM recovery_owners WHERE user_id = {self.json_parameter()}", (user_id,)
+            ).fetchone()
+        return row is not None
+
+    def list_user_emails(self, *, after: str, limit: int) -> list[str]:
+        mark = self.json_parameter()
+        with self.transaction() as connection:
+            rows = connection.execute(
+                f"SELECT email FROM users WHERE email > {mark} ORDER BY email LIMIT {mark}",
+                (after, limit),
+            ).fetchall()
+        return [row[0] for row in rows]
+
+    def create_password_reset(self, user_id: str, token_hash: str, now: int, expires_at: int) -> None:
+        mark = self.json_parameter()
+        with self.transaction() as connection:
+            self._lock_account(connection, user_id)
+            connection.execute(
+                f"DELETE FROM password_resets WHERE user_id = {mark} AND expires_at <= {mark}",
+                (user_id, now),
+            )
+            connection.execute(
+                f"INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES ({mark}, {mark}, {mark})",
+                (user_id, token_hash, expires_at),
+            )
+
+    def password_reset_user(self, token_hash: str, now: int) -> str | None:
+        mark = self.json_parameter()
+        with self.transaction() as connection:
+            row = connection.execute(
+                f"SELECT user_id FROM password_resets WHERE token_hash = {mark} AND expires_at > {mark}",
+                (token_hash, now),
+            ).fetchone()
+        return row[0] if row else None
+
+    def reset_password(
+        self, user_id: str, token_hash: str, now: int, password_hash: str, *, owner_email: str = "",
+    ) -> bool:
+        mark = self.json_parameter()
+        with self.transaction() as connection:
+            self._lock_account(connection, user_id)
+            used = connection.execute(
+                f"DELETE FROM password_resets WHERE token_hash = {mark} AND user_id = {mark} "
+                f"AND expires_at > {mark} RETURNING user_id",
+                (token_hash, user_id, now),
+            ).fetchone()
+            if not used:
+                return False
+            connection.execute(f"UPDATE users SET password_hash = {mark} WHERE id = {mark}", (password_hash, user_id))
+            if owner_email:
+                connection.execute(
+                    f"INSERT INTO recovery_owners (user_id) SELECT id FROM users WHERE id = {mark} "
+                    f"AND email = {mark} ON CONFLICT (user_id) DO NOTHING",
+                    (user_id, owner_email),
+                )
+            connection.execute(f"DELETE FROM sessions WHERE user_id = {mark}", (user_id,))
+            connection.execute(f"DELETE FROM password_resets WHERE user_id = {mark}", (user_id,))
+        return True
+
+    def _lock_account(self, connection, user_id: str) -> None:
+        if self.is_postgres:
+            connection.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+        else:
+            connection.execute("BEGIN IMMEDIATE")
+
     def consume_auth_attempt(
         self, bucket_key: str, *, now: int, window: int, limit: int,
     ) -> int:
@@ -125,12 +208,22 @@ class Database:
                 (email,),
             ).fetchone()
 
-    def create_session(self, user_id: str, token_hash: str, expires_at: str) -> None:
+    def create_session(
+        self, user_id: str, token_hash: str, expires_at: str, *, verified_password_hash: str | None = None,
+    ) -> bool:
         with self.transaction() as connection:
+            if verified_password_hash is not None:
+                self._lock_account(connection, user_id)
+                row = connection.execute(
+                    f"SELECT password_hash FROM users WHERE id = {self.json_parameter()}", (user_id,)
+                ).fetchone()
+                if row != (verified_password_hash,):
+                    return False
             connection.execute(
                 f"INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ({self.json_parameter()}, {self.json_parameter()}, {self.json_parameter()})",
                 (token_hash, user_id, expires_at),
             )
+        return True
 
     def session_user(self, token_hash: str, now: str):
         with self.transaction() as connection:

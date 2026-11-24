@@ -18,7 +18,7 @@ def check_origin(request):
 
 async def validation_error(request: Request, exc: RequestValidationError):
     path = request.url.path.rstrip("/")
-    if path in {"/api/account/register", "/api/account/login"} or path.startswith("/api/account/keys/"):
+    if path in {"/api/account/register", "/api/account/login", "/api/account/reset-password"} or path.startswith("/api/account/keys/"):
         # FastAPI validation details may include the rejected password or API key.
         return JSONResponse({"detail": "Проверь введённые данные."}, status_code=422)
     return await request_validation_exception_handler(request, exc)

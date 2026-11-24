@@ -1,3 +1,4 @@
+import RecoveryUsers from "./RecoveryUsers";
 import WeatherSettings from "./WeatherSettings";
 import RunnerPlanForm from "./RunnerPlanForm";
 import { useEffect, useRef, useState } from "react";
@@ -73,13 +74,30 @@ function KeySetting({ provider, label, configured, onChange }) {
 }
 
 export default function AccountPanel({ account, onChange, onPlanSaved, weatherLocation, onWeatherChange }) {
-  const [mode, setMode] = useState(null);
+  const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("reset-password"));
+  const [mode, setMode] = useState(() => resetToken ? "reset-password" : null);
+  const [showUsers, setShowUsers] = useState(false);
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const dialog = useRef(null);
-  const authOpen = !account && (mode === "login" || mode === "register");
   const registering = mode === "register";
+  const requestingReset = mode === "forgot-password";
+  const resetting = mode === "reset-password";
+  const authOpen = resetting || requestingReset || (!account && (mode === "login" || registering));
+  const title = requestingReset ? "Восстановление пароля" : resetting ? "Новый пароль"
+    : registering ? "Создать аккаунт" : "Вход в дашборд";
+  const description = requestingReset ? "Введи email своего аккаунта, чтобы получить ссылку."
+    : resetting ? "Задай новый пароль для входа."
+    : registering ? "Сохраняй свои тренировки и показатели Garmin в личном кабинете."
+    : "Твои тренировки и показатели Garmin в одном месте.";
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.hash.slice(1)).has("reset-password")) {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
+  }, []);
 
   useEffect(() => {
     const element = dialog.current;
@@ -89,7 +107,10 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
 
   function open(next) {
     setError("");
+    setNotice("");
+    if (next !== "reset-password") setResetToken(null);
     setMode(next);
+    setShowUsers(false);
   }
 
   async function submit(event) {
@@ -97,7 +118,20 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
     const values = event ? Object.fromEntries(new FormData(event.currentTarget)) : null;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
+      if (values && (requestingReset || resetting)) {
+        const body = requestingReset ? { email: values.email } : { password: values.password, token: resetToken };
+        await accountRequest(`/${mode}`, { method: "POST", body: JSON.stringify(body) });
+        if (requestingReset) {
+          setNotice("Если аккаунт с таким email существует, на него придёт ссылка для восстановления.");
+        } else {
+          onChange(null);
+          open("login");
+          setNotice("Пароль обновлён. Войди с новым паролем.");
+        }
+        return;
+      }
       if (values) {
         const user = await accountRequest(`/${mode}`, { method: "POST", body: JSON.stringify(values) });
         onChange(user);
@@ -139,37 +173,40 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
             <Footprints size={22} aria-hidden="true" />
           </div>
           <h2 id="auth-title" className="mb-2 text-2xl font-bold">
-            {registering ? "Создать аккаунт" : "Вход в дашборд"}
+            {title}
           </h2>
           <p className="mb-6 text-sm text-slate-300">
-            {registering ? "Сохраняй свои тренировки и показатели Garmin в личном кабинете." : "Твои тренировки и показатели Garmin в одном месте."}
+            {description}
           </p>
           <form key={mode} className="grid gap-4" onSubmit={submit}>
-            <label className="grid gap-1.5 text-sm font-medium">
+            {!resetting && <label className="grid gap-1.5 text-sm font-medium">
               Email
               <input className={`${field} h-12 text-base focus:border-[#eab16a] focus:outline-none`}
-                name="email" type="email" autoComplete="email" placeholder="name@example.com" required />
-            </label>
-            <label className="grid gap-1.5 text-sm font-medium">
-              Пароль
+                name="email" type="email" autoComplete="email" placeholder="name@example.com"
+                defaultValue={requestingReset ? account?.email : undefined} required />
+            </label>}
+            {!requestingReset && <label className="grid gap-1.5 text-sm font-medium">
+              {resetting ? "Новый пароль" : "Пароль"}
               <input className={`${field} h-12 text-base focus:border-[#eab16a] focus:outline-none`}
                 name="password" type="password" minLength={10} maxLength={128}
-                autoComplete={registering ? "new-password" : "current-password"} required />
-              {registering && <span className="font-normal text-slate-400">Минимум 10 символов</span>}
-            </label>
+                autoComplete={registering || resetting ? "new-password" : "current-password"} required />
+              {(registering || resetting) && <span className="font-normal text-slate-400">Минимум 10 символов</span>}
+            </label>}
+            {notice && <p className="text-sm text-emerald-300" role="status">{notice}</p>}
             {error && <p className="text-sm text-rose-300" role="alert">{error}</p>}
             <button disabled={busy} className="h-12 rounded-xl bg-[#eab16a] font-bold text-[#18130f] hover:bg-[#f4c38c] disabled:opacity-60">
-              {busy ? "Подожди…" : registering ? "Создать аккаунт" : "Войти"}
+              {busy ? "Подожди…" : requestingReset ? "Отправить ссылку" : resetting ? "Сохранить пароль" : registering ? "Создать аккаунт" : "Войти"}
             </button>
           </form>
           <div className="mt-5 flex flex-wrap justify-between gap-3 text-sm">
             <button type="button" disabled={busy} className="font-semibold text-[#f3bc7f] hover:underline"
-              onClick={() => open(registering ? "login" : "register")}>
-              {registering ? "Уже есть аккаунт" : "Зарегистрироваться"}
+              onClick={() => open(account ? "settings" : mode === "login" ? "register" : "login")}>
+              {account ? "Вернуться в настройки" : mode === "login" ? "Зарегистрироваться" : "Вернуться ко входу"}
             </button>
-            <button type="button" disabled={busy} className="text-slate-300 hover:underline" onClick={() => open(null)}>
-              Остаться в демо
-            </button>
+            {mode === "login" && <button type="button" disabled={busy} className="text-slate-300 hover:underline"
+              onClick={() => open("forgot-password")}>Забыли пароль?</button>}
+            {registering && <button type="button" disabled={busy} className="text-slate-300 hover:underline"
+              onClick={() => open(null)}>Остаться в демо</button>}
           </div>
         </div>}
       </dialog>
@@ -178,12 +215,26 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
           <h2 className="text-base font-semibold">Ключи подключения</h2>
           <button className={button} onClick={() => open(null)}><ChevronUp size={15} />Свернуть</button>
         </div>
+        {account.recovery_admin === "verify" && (
+          <div className="grid gap-2 rounded-xl border border-slate-700 p-3 text-sm text-slate-300">
+            <p>Чтобы открыть вкладку «Пользователи», один раз подтверди свою почту через смену пароля по ссылке.</p>
+            <button type="button" className={`${button} w-fit`} onClick={() => open("forgot-password")}>Подтвердить почту</button>
+          </div>
+        )}
+        {account.recovery_admin === "active" && (
+          <button type="button" className={`${button} w-fit`} aria-expanded={showUsers}
+            onClick={() => setShowUsers((value) => !value)}>
+            {showUsers ? "Вернуться в настройки" : "Пользователи"}
+          </button>
+        )}
+        {showUsers ? <RecoveryUsers request={accountRequest} /> : <>
         <KeySetting provider="garmin" label="Garmin Personal API key" configured={account.garmin}
           onChange={(garmin) => onChange({ ...account, garmin })} />
         <KeySetting provider="ai" label="GigaChat Authorization Key (необязательно)" configured={account.ai}
           onChange={(ai) => onChange({ ...account, ai })} />
         <WeatherSettings key={account.id} location={weatherLocation} request={accountRequest} onChange={onWeatherChange} />
         <RunnerPlanForm key={account.id} request={accountRequest} onSaved={onPlanSaved} />
+        </>}
       </section>}
       {error && !authOpen && <p className="mt-2 text-rose-300" role="alert">{error}</p>}
     </header>

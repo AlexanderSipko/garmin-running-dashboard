@@ -15,6 +15,8 @@ def _value(name: str, default: str = "") -> str:
 class Settings:
     sqlite_path: Path
     database_url: str = field(repr=False)
+    resend_api_key: str = field(repr=False)
+    password_reset_from: str
     app_origin: str
     secrets_encryption_key: str = field(repr=False)
     garmin_api_timeout_seconds: float
@@ -32,6 +34,8 @@ settings = Settings(
         or _value("GARMIN_POSTGRES_URL")
         or _value("GARMIN_DATABASE_URL_UNPOOLED")
     ),
+    resend_api_key=_value("RESEND_API_KEY"),
+    password_reset_from=_value("PASSWORD_RESET_FROM"),
     app_origin=_value("APP_ORIGIN"),
     secrets_encryption_key=_value("SECRETS_ENCRYPTION_KEY"),
     garmin_api_timeout_seconds=25.0,
