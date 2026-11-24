@@ -7,7 +7,7 @@ import useGarminDashboard from "../hooks/useGarminDashboard";
 
 const theme = "[background:var(--bg)] text-[color:var(--text)] [--bg:#141b20] [--panel:#1a242a] [--border:#303e46] [--text:#e3eaed] [--muted:#91a0a8] [--soft:#b8c5cb] [--accent:#eab16a] [--accent-soft:#332c23]";
 
-function Dashboard({ demo, account, planRevision, weather }) {
+function Dashboard({ demo, account, planRevision, weather, onWeatherChange }) {
   const dashboard = useGarminDashboard(demo);
 
   return (
@@ -27,6 +27,8 @@ function Dashboard({ demo, account, planRevision, weather }) {
         syncedAt={dashboard.syncedAt}
         planRevision={planRevision}
         weather={weather}
+        weatherRequest={accountRequest}
+        onWeatherChange={onWeatherChange}
         wellness={dashboard.wellness}
         deloadWeeks={dashboard.deloadWeeks}
         plannedSessions={dashboard.plannedSessions}
@@ -67,7 +69,7 @@ export default function App() {
       {showGuide ? <ConnectionGuide /> : (
         <>
           {!account && <DemoIntro />}
-          <Dashboard key={account?.id || "demo"} demo={!account} account={account} planRevision={planRevision} weather={weather} />
+          <Dashboard key={account?.id || "demo"} demo={!account} account={account} planRevision={planRevision} weather={weather} onWeatherChange={changeLocation} />
         </>
       )}
     </div>

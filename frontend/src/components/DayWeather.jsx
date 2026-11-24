@@ -1,4 +1,4 @@
-import { Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Sun } from "lucide-react";
+import { Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Droplets, Sun } from "lucide-react";
 
 function conditions(code) {
   if (code === 0) return [Sun, "Ясно", "text-[#ffd296]"];
@@ -37,5 +37,27 @@ export default function DayWeather({ day }) {
       </span>
       {day.precipitation != null && <span className="text-sky-200">{day.precipitation}%</span>}
     </span>
+  );
+}
+
+export function SelectedDayWeather({ day }) {
+  if (!day) return null;
+  const [Icon, label, color] = conditions(day.code);
+  const temperature = [day.min, day.max].filter((value) => value != null).map(degrees).join(" … ");
+
+  return (
+    <section aria-label="Погода на выбранный день"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[#38505e] bg-[#1a2a34] px-3 py-2.5">
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+        {day.code != null && <Icon size={18} className={color} aria-hidden="true" />}
+        {day.code != null ? label : "Прогноз погоды"}
+      </h3>
+      {temperature && <span className="text-sm font-semibold tabular-nums text-slate-100">{temperature}</span>}
+      {day.precipitation != null && (
+        <span className="inline-flex items-center gap-1.5 text-sm text-sky-200">
+          <Droplets size={15} aria-hidden="true" /> Вероятность осадков {day.precipitation}%
+        </span>
+      )}
+    </section>
   );
 }

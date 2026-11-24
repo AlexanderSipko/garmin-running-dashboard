@@ -6,12 +6,13 @@ import {
   Footprints,
   Gauge,
   HeartPulse,
-  MapPin,
   Watch,
 } from "lucide-react";
 import { localDateKey } from "../lib/wellnessDates";
 import { fmtPace } from "../lib/format";
 import { averageRunningPace, dayKey, emptySummary, getActivityCategory, getActivityDate, summarizeActivities, summarizeCalendar } from "../lib/calendarAnalytics";
+import { SelectedDayWeather } from "./DayWeather";
+import WeatherPanel from "./WeatherPanel";
 import DaySummary from "./DaySummary";
 import DayTrainingPlan from "./DayTrainingPlan";
 import WorkoutReview from "./WorkoutReview";
@@ -30,7 +31,7 @@ const monthShortNames = Array.from({ length: 12 }, (_, month) =>
 
 function CalendarPeriodExplorer({
   activities, busy, error, onSync, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
-  planRevision, weather, deloadWeeks, plannedSessions, onTrainingWeekChanged, onMarkDeload,
+  planRevision, weather, weatherRequest, onWeatherChange, deloadWeeks, plannedSessions, onTrainingWeekChanged, onMarkDeload,
 }) {
   const detailCache = useRef(new Map()).current;
   const [yearsOpen, setYearsOpen] = useState(false);
@@ -316,15 +317,7 @@ function CalendarPeriodExplorer({
             ))}
           </div>
         </header>
-        {weather?.location && (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-sky-200">
-            <MapPin size={14} aria-hidden="true" />
-            <b>{weather.location.name}</b>
-            <span className="text-slate-400" role="status">
-              {weather.loading ? "Загружаю прогноз…" : weather.unavailable ? "Прогноз временно недоступен" : "Прогноз на 14 дней"}
-            </span>
-          </div>
-        )}
+        {!publicDemo && <WeatherPanel weather={weather} request={weatherRequest} onChange={onWeatherChange} />}
         {coachEnabled && <RunningCoachPanel
           key={planRevision}
           period={selection.type}
@@ -572,6 +565,7 @@ function CalendarPeriodExplorer({
 
         {selection.type === "day" && (
           <>
+            <SelectedDayWeather day={weather?.days?.[localDateKey(periodStart)]} />
             {!publicDemo && <DayTrainingPlan key={localDateKey(periodStart)} date={localDateKey(periodStart)} session={dayPlan}
               hasActivities={periodActivities.length > 0} onPlanChanged={onTrainingWeekChanged} />}
             {(!dayPlan || dayRuns.length > 0) && (

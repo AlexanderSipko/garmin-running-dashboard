@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { MapPin } from "lucide-react";
 
 const button = "rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold disabled:opacity-50";
 
 export default function WeatherSettings({ location, request, onChange }) {
+  const titleId = useId();
   const [city, setCity] = useState("");
   const [results, setResults] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -40,9 +41,9 @@ export default function WeatherSettings({ location, request, onChange }) {
   }
 
   return (
-    <section className="grid gap-3 rounded-2xl border border-slate-700 bg-[#1b262c] p-4" aria-labelledby="weather-settings">
+    <section className="grid gap-3 rounded-2xl border border-slate-700 bg-[#1b262c] p-4" aria-labelledby={titleId}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id="weather-settings" className="flex items-center gap-2 font-semibold"><MapPin size={17} /> Город для прогноза</h3>
+        <h3 id={titleId} className="flex items-center gap-2 font-semibold"><MapPin size={17} /> Город для прогноза</h3>
         {location && <button type="button" className="text-xs text-slate-400" disabled={busy} onClick={() => select(null)}>Убрать город</button>}
       </div>
       <p className="text-sm text-slate-300">{location?.name || "Город ещё не выбран"}</p>
