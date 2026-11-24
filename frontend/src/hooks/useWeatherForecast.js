@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export default function useWeatherForecast(accountId, request) {
   const [snapshot, setSnapshot] = useState(null);
-  const weather = snapshot?.accountId === accountId ? snapshot.weather : null;
+  const weather = snapshot && snapshot.accountId === accountId ? snapshot.weather : null;
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
@@ -15,7 +15,7 @@ export default function useWeatherForecast(accountId, request) {
         if (!controller.signal.aborted) setSnapshot({ accountId, weather });
       } catch {
         if (!controller.signal.aborted) {
-          setSnapshot((previous) => previous?.accountId === accountId
+          setSnapshot((previous) => previous && previous.accountId === accountId
             ? { accountId, weather: { ...previous.weather, unavailable: true } }
             : previous);
         }
