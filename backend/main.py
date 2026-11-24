@@ -26,6 +26,7 @@ from request_security import check_origin, validation_error
 from settings import settings
 from runner_plan import plan_context
 from store import Database
+from strength_notes import StrengthNote, get_strength_note, store_strength_note
 from training_week import (
     WeekPreferences, build_week_draft, change_week_distance, include_calendar_sessions,
     move_week_session, save_calendar_session, week_context, week_progress,
@@ -218,8 +219,9 @@ def analyze_period(
             if turn.get("focus_date") == day_key
         ][-4:]
 
+    strength_notes = store.get("strength_notes", {})
     activity_summary = {
-        "strength": strength_summary(selected, include_details=True),
+        "strength": strength_summary(selected, include_details=True, notes=strength_notes),
         "previous_strength": strength_summary(previous) if previous is not None else None,
         "last_sync_at": store.get("synced_at"),
     }
@@ -251,7 +253,7 @@ def analyze_period(
         activity_summary["current_month_strength"] = {
             "from": month_start.isoformat(),
             "to": reference_day.isoformat(),
-            **strength_summary(month_rows, include_details=True),
+            **strength_summary(month_rows, include_details=True, notes=strength_notes),
         }
 
     try:
@@ -717,6 +719,17 @@ def dashboard_wellness_day(day: date) -> dict[str, Any]:
         if points:
             metrics[name] = points
     return {"metrics": metrics, "synced_at": store.get("wellness_synced_at")}
+
+
+@app.get("/api/activities/{activity_id}/strength-note")
+def read_strength_note(activity_id: int) -> dict:
+    return {"entry": get_strength_note(read_store(), activity_id)}
+
+
+@app.put("/api/activities/{activity_id}/strength-note")
+def save_strength_note(activity_id: int, entry: StrengthNote) -> dict:
+    update_store(lambda store: store_strength_note(store, activity_id, entry))
+    return {"entry": entry.model_dump()}
 
 
 @app.get("/api/activities/{activity_id}/splits")

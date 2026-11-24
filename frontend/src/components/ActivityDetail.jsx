@@ -2,6 +2,8 @@ import SectionEyebrow from "./SectionEyebrow";
 import { useEffect, useState } from "react";
 import { Clock3, Footprints, Gauge, Heart, RefreshCw, Route } from "lucide-react";
 import { fmtDate, fmtDuration, fmtPace } from "../lib/format";
+import { getActivityCategory } from "../lib/calendarAnalytics";
+import StrengthActivity from "./StrengthActivity";
 import ActivityRouteMap from "./ActivityRouteMap";
 import ActivityTrackCharts from "./ActivityTrackCharts";
 
@@ -23,7 +25,9 @@ function ActivityDetail({ date, activities, detailCache, onActivityUpdated }) {
 
       {activities.length ? (
         activities.map((activity, index) => (
-          <ActivitySummary activity={activity} detailCache={detailCache} onActivityUpdated={onActivityUpdated} key={activity.id || index} />
+          getActivityCategory(activity) === "strength"
+            ? <StrengthActivity activity={activity} key={activity.id || index} />
+            : <ActivitySummary activity={activity} detailCache={detailCache} onActivityUpdated={onActivityUpdated} key={activity.id || index} />
         ))
       ) : (
         <p className="rest-day-message mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">В этот день тренировок нет.</p>

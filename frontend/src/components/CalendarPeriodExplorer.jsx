@@ -145,9 +145,10 @@ function CalendarPeriodExplorer({
     setSelection({ type: "day", year, month, day });
   }
 
-  const dayRuns = selection.type === "day"
-    ? periodActivities.filter((activity) => getActivityCategory(activity) === "running")
+  const dayActivities = selection.type === "day"
+    ? periodActivities.filter((activity) => getActivityCategory(activity))
     : [];
+  const dayRuns = dayActivities.filter((activity) => getActivityCategory(activity) === "running");
   const dayPlan = selection.type === "day"
     ? plannedSessions?.find(({ date }) => date === localDateKey(periodStart))
     : null;
@@ -568,10 +569,10 @@ function CalendarPeriodExplorer({
             <SelectedDayWeather day={weather?.days?.[localDateKey(periodStart)]} />
             {!publicDemo && <DayTrainingPlan key={localDateKey(periodStart)} date={localDateKey(periodStart)} session={dayPlan}
               hasActivities={periodActivities.length > 0} onPlanChanged={onTrainingWeekChanged} />}
-            {(!dayPlan || dayRuns.length > 0) && (
+            {(!dayPlan || dayActivities.length > 0) && (
               <>
-                {(publicDemo || dayRuns.length !== 1) && <DaySummary activities={dayRuns} date={periodStart} />}
-                {!publicDemo && <ActivityDetail date={periodStart} activities={dayRuns} detailCache={detailCache} onActivityUpdated={onActivityUpdated} />}
+                {(publicDemo || dayRuns.length > 1 || dayActivities.length === 0) && <DaySummary activities={dayRuns} date={periodStart} />}
+                {!publicDemo && <ActivityDetail date={periodStart} activities={dayActivities} detailCache={detailCache} onActivityUpdated={onActivityUpdated} />}
                 {!publicDemo && dayRuns.length > 0 && <WorkoutReview key={localDateKey(periodStart)} runs={dayRuns} plan={dayPlan} />}
               </>
             )}
