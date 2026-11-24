@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowUpRight, Footprints, KeyRound, ShieldCheck } from "lucide-react";
 
-export const guideHash = "#connect";
+import { PageLink } from "../app/DashboardRouter";
+import { dashboardPath, guidePath } from "../lib/dashboardRoutes";
 
 const garminKeys = "https://connect.garmin.com/app/settings/personalApiToken";
 const gigachatGuide = "https://developers.sber.ru/docs/ru/gigachat/quickstart/ind-using-api";
@@ -29,7 +30,7 @@ export function DemoIntro() {
             Подключи свой Garmin, чтобы увидеть личную статистику.
           </p>
         </div>
-        <a className={link} href={guideHash}><KeyRound size={16} aria-hidden="true" /> Как подключить Garmin и ИИ</a>
+        <PageLink className={link} to={guidePath}><KeyRound size={16} aria-hidden="true" /> Как подключить Garmin и ИИ</PageLink>
       </div>
     </section>
   );
@@ -39,9 +40,9 @@ export function ConnectionGuide() {
   return (
     <main className="min-h-screen bg-[#141b20] text-[#e3eaed]" aria-labelledby="connection-title">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
-        <a className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#f3bc7f] hover:underline" href="#">
+        <PageLink className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#f3bc7f] hover:underline" to={dashboardPath}>
           <ArrowLeft size={17} aria-hidden="true" /> К дашборду
-        </a>
+        </PageLink>
         <h1 id="connection-title" className="mt-3 text-2xl font-bold sm:text-3xl">Подключение аккаунта</h1>
         <p className="mt-2 text-sm text-slate-300">Создай аккаунт в дашборде. После входа открой «Настройки».</p>
 

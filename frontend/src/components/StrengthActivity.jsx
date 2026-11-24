@@ -5,7 +5,7 @@ import { fmtDuration } from "../lib/format";
 const field = "w-full min-w-0 rounded-lg border border-[#46545b] bg-[#172229] px-3 py-2 text-sm";
 const button = "inline-flex min-h-9 w-fit items-center gap-1.5 rounded-lg border border-[#46545b] px-3 text-xs font-semibold hover:bg-[#26363d] disabled:opacity-50";
 
-export default function StrengthActivity({ activity }) {
+export default function StrengthActivity({ activity, onActivityUpdated }) {
   const originalTitle = activity.name || "Силовая тренировка";
   const [entry, setEntry] = useState(null);
   const [draft, setDraft] = useState(null);
@@ -50,6 +50,7 @@ export default function StrengthActivity({ activity }) {
         throw new Error(typeof result?.detail === "string" ? result.detail : "Не удалось сохранить тренировку.");
       }
       setEntry(result.entry);
+      onActivityUpdated?.({ ...activity, strength_title: result.entry.title });
       setDraft(null);
       setNotice("Заметка сохранена.");
     } catch (failure) {

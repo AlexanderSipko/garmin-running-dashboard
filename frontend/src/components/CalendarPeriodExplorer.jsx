@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ChevronDown,
@@ -8,6 +8,7 @@ import {
   HeartPulse,
   Watch,
 } from "lucide-react";
+import { dayFromPath } from "../lib/dashboardRoutes";
 import { localDateKey } from "../lib/wellnessDates";
 import { fmtPace } from "../lib/format";
 import { averageRunningPace, dayKey, emptySummary, getActivityCategory, getActivityDate, summarizeActivities, summarizeCalendar } from "../lib/calendarAnalytics";
@@ -30,10 +31,11 @@ const monthShortNames = Array.from({ length: 12 }, (_, month) =>
 );
 
 function CalendarPeriodExplorer({
-  activities, busy, error, onSync, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
+  activities, pagePath, busy, error, onSync, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
   planRevision, weather, weatherRequest, onWeatherChange, deloadWeeks, plannedSessions, onTrainingWeekChanged, onMarkDeload,
 }) {
   const detailCache = useRef(new Map()).current;
+  const linkedDetails = useRef(null);
   const [yearsOpen, setYearsOpen] = useState(false);
   const availableYears = useMemo(() => {
     const years = new Set(activities.map((activity) => getActivityDate(activity).getFullYear()));
@@ -59,6 +61,17 @@ function CalendarPeriodExplorer({
     type: "year",
     year: new Date().getFullYear(),
   }));
+
+  useEffect(() => {
+    const linkedDay = dayFromPath(pagePath);
+    if (!linkedDay) return;
+    const { year, month } = linkedDay;
+    setExpandedYear(year);
+    setExpandedMonth({ year, month });
+    setSelection({ type: "day", ...linkedDay });
+    const frame = requestAnimationFrame(() => linkedDetails.current?.scrollIntoView({ block: "start" }));
+    return () => cancelAnimationFrame(frame);
+  }, [pagePath]);
 
   const { periodStart, periodEnd } = useMemo(() => {
     const start = selection.type === "year"
@@ -565,7 +578,7 @@ function CalendarPeriodExplorer({
         )}
 
         {selection.type === "day" && (
-          <>
+          <div ref={linkedDetails} className="grid gap-3">
             <SelectedDayWeather day={weather?.days?.[localDateKey(periodStart)]} />
             {!publicDemo && <DayTrainingPlan key={localDateKey(periodStart)} date={localDateKey(periodStart)} session={dayPlan}
               hasActivities={periodActivities.length > 0} onPlanChanged={onTrainingWeekChanged} />}
@@ -576,7 +589,7 @@ function CalendarPeriodExplorer({
                 {!publicDemo && dayRuns.length > 0 && <WorkoutReview key={localDateKey(periodStart)} runs={dayRuns} plan={dayPlan} />}
               </>
             )}
-          </>
+          </div>
         )}
 
       </section>

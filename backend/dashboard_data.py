@@ -132,6 +132,11 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
         for session in plan["sessions"] if session["kind"] != "rest"
     ]
     planned_sessions.extend(store.get("calendar_training_sessions", {}).values())
+    strength_notes = store.get("strength_notes", {})
+    activity_rows = []
+    for activity in activities[:5000]:
+        entry = strength_notes.get(str(activity.get("id")))
+        activity_rows.append({**activity, "strength_title": entry["title"]} if entry else activity)
     return {
         "connection": {
             "configured": configured,
@@ -150,7 +155,7 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
         "weekly": weekly,
         "deload_weeks": store.get("deload_weeks", {}),
         "planned_sessions": planned_sessions,
-        "activities": activities[:5000],
+        "activities": activity_rows,
         "wellness": {
             "years": yearly_wellness,
             "metrics": wellness_series,

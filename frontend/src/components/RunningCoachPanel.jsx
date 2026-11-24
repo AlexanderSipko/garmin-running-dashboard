@@ -92,7 +92,7 @@ export default function RunningCoachPanel({ period, periodStart, periodEnd, labe
       </button>
       <button type="button" onClick={openConsultation} aria-haspopup="dialog"
         aria-label="Открыть консультацию" title="Консультация и анализ"
-        className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-40 grid size-12 place-items-center rounded-full border border-[#715339] bg-[#eab16a] text-[#211810] shadow-lg shadow-black/40 hover:bg-[#f5c58e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3bc7f]">
+        className="fixed bottom-[calc(var(--footer-height,0px)+0.75rem)] right-[max(1rem,env(safe-area-inset-right))] z-40 grid size-12 place-items-center rounded-full border border-[#715339] bg-[#eab16a] text-[#211810] shadow-lg shadow-black/40 hover:bg-[#f5c58e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f3bc7f]">
         <ScanLine size={22} aria-hidden="true" />
       </button>
       <dialog ref={modal} onClose={() => setIsOpen(false)} aria-labelledby="consultation-title"

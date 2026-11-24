@@ -26,7 +26,7 @@ function ActivityDetail({ date, activities, detailCache, onActivityUpdated }) {
       {activities.length ? (
         activities.map((activity, index) => (
           getActivityCategory(activity) === "strength"
-            ? <StrengthActivity activity={activity} key={activity.id || index} />
+            ? <StrengthActivity activity={activity} onActivityUpdated={onActivityUpdated} key={activity.id || index} />
             : <ActivitySummary activity={activity} detailCache={detailCache} onActivityUpdated={onActivityUpdated} key={activity.id || index} />
         ))
       ) : (

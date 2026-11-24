@@ -2,16 +2,18 @@ import RecoveryUsers from "./RecoveryUsers";
 import WeatherSettings from "./WeatherSettings";
 import RunnerPlanForm from "./RunnerPlanForm";
 import { useEffect, useRef, useState } from "react";
-import { ChevronUp, Footprints, KeyRound, LogIn, LogOut, Settings2, UserPlus, X } from "lucide-react";
+import { Footprints, KeyRound, LogIn, LogOut, Settings2, UserPlus, X } from "lucide-react";
 
 export async function accountRequest(path, options = {}) {
   const response = await fetch(`/api/account${path}`, {
     ...options,
     headers: { "Content-Type": "application/json" },
   });
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(typeof result.detail === "string" ? result.detail : "Проверь введённые данные.");
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result) {
+    const error = new Error(typeof result?.detail === "string" ? result.detail : "Сервер аккаунтов временно недоступен.");
+    error.status = response.status;
+    throw error;
   }
   return result;
 }
@@ -63,10 +65,10 @@ function KeySetting({ provider, label, configured, onChange }) {
           type="password" autoComplete="off" maxLength={4096}
           value={value} onChange={(event) => setValue(event.target.value)} />
       </label>
-      <div className="flex flex-wrap gap-2">
-        <button className={`${button} ${primary}`} disabled={busy || !value.trim()}>Сохранить</button>
-        <button className={button} type="button" disabled={busy || !configured} onClick={() => action("check")}>Проверить</button>
-        <button className={`${button} text-rose-300`} type="button" disabled={busy || !configured} onClick={() => action("remove")}>Удалить</button>
+      <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
+        <button className={`${button} ${primary} min-h-9 min-w-0 max-sm:px-0.5 max-sm:text-[12px]`} disabled={busy || !value.trim()}>Сохранить</button>
+        <button className={`${button} min-h-9 min-w-0 max-sm:px-0.5 max-sm:text-[12px]`} type="button" disabled={busy || !configured} onClick={() => action("check")}>Проверить</button>
+        <button className={`${button} min-h-9 min-w-0 max-sm:px-0.5 max-sm:text-[12px] text-rose-300`} type="button" disabled={busy || !configured} onClick={() => action("remove")}>Удалить</button>
       </div>
       {feedback && <p role="status">{feedback}</p>}
     </form>
@@ -82,6 +84,8 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
   const [busy, setBusy] = useState(false);
 
   const dialog = useRef(null);
+  const settingsDialog = useRef(null);
+  const settingsOpen = Boolean(account && mode === "settings");
   const registering = mode === "register";
   const requestingReset = mode === "forgot-password";
   const resetting = mode === "reset-password";
@@ -101,9 +105,12 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
 
   useEffect(() => {
     const element = dialog.current;
-    if (authOpen && !element.open) element.showModal();
+    const settings = settingsDialog.current;
     if (!authOpen && element.open) element.close();
-  }, [authOpen]);
+    if (!settingsOpen && settings.open) settings.close();
+    if (authOpen && !element.open) element.showModal();
+    if (settingsOpen && !settings.open) settings.showModal();
+  }, [authOpen, settingsOpen]);
 
   function open(next) {
     setError("");
@@ -151,15 +158,17 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
 
   return (
     <header className="border-b border-slate-700 bg-[#141b20] px-3 py-2 text-slate-100">
-      <nav className="flex flex-wrap items-center gap-2" aria-label="Аккаунт">
-        <span className="mr-auto min-w-0 truncate text-sm text-slate-300">{account?.email || "Демо · вымышленные данные"}</span>
+      <nav className="mx-auto flex max-w-[96rem] flex-wrap items-center justify-between gap-2 sm:px-2" aria-label="Аккаунт">
+        <span className="min-w-0 flex-1 basis-36 truncate text-sm text-slate-300">{account?.email || "Демо · вымышленные данные"}</span>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
         {account ? <>
-          <button className={button} onClick={() => open(mode === "settings" ? null : "settings")} aria-expanded={mode === "settings"}><Settings2 size={15} />Настройки</button>
+          <button className={`${button} min-h-9`} onClick={() => open("settings")} aria-haspopup="dialog"><Settings2 size={15} />Настройки</button>
           <button className={button} disabled={busy} onClick={() => submit()}><LogOut size={15} />Выйти</button>
         </> : <>
           <button className={button} onClick={() => open("login")}><LogIn size={15} />Войти</button>
           <button className={`${button} ${primary}`} onClick={() => open("register")}><UserPlus size={15} />Регистрация</button>
         </>}
+        </div>
       </nav>
       <dialog ref={dialog} aria-labelledby="auth-title"
         onCancel={(event) => { event.preventDefault(); if (!busy) open(null); }}
@@ -210,32 +219,56 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
           </div>
         </div>}
       </dialog>
-      {account && mode === "settings" && <section className="mt-3 grid max-w-lg gap-4" aria-label="Настройки аккаунта">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold">Ключи подключения</h2>
-          <button className={button} onClick={() => open(null)}><ChevronUp size={15} />Свернуть</button>
-        </div>
-        {account.recovery_admin === "verify" && (
-          <div className="grid gap-2 rounded-xl border border-slate-700 p-3 text-sm text-slate-300">
-            <p>Чтобы открыть вкладку «Пользователи», один раз подтверди свою почту через смену пароля по ссылке.</p>
-            <button type="button" className={`${button} w-fit`} onClick={() => open("forgot-password")}>Подтвердить почту</button>
-          </div>
+      <dialog ref={settingsDialog} aria-labelledby="settings-title"
+        onCancel={(event) => { event.preventDefault(); open(null); }}
+        className="m-auto max-h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] max-w-[900px] overflow-y-auto overscroll-contain rounded-2xl border border-[#415157] bg-[#162128] p-0 text-slate-100 shadow-2xl backdrop:bg-[#091014]/80 backdrop:backdrop-blur-sm sm:rounded-3xl">
+        {settingsOpen && (
+          <>
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-[#415157] bg-[#1d2a31] px-4 py-3 sm:px-6 sm:py-4">
+              <div className="min-w-0">
+                <h2 id="settings-title" className="flex items-center gap-2 text-lg font-bold">
+                  <Settings2 size={18} aria-hidden="true" /> Настройки
+                </h2>
+                <p className="mt-0.5 truncate text-sm text-slate-400" title={account.email}>{account.email}</p>
+              </div>
+              <button type="button" aria-label="Закрыть настройки" onClick={() => open(null)}
+                className="grid size-10 shrink-0 place-items-center rounded-xl text-slate-300 hover:bg-white/10 focus-visible:outline-2">
+                <X size={20} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="grid gap-4 p-3 sm:p-5">
+              {account.recovery_admin === "verify" && (
+                <div className="grid gap-2 rounded-xl border border-slate-700 p-3 text-sm text-slate-300">
+                  <p>Чтобы открыть вкладку «Пользователи», один раз подтверди свою почту через смену пароля по ссылке.</p>
+                  <button type="button" className={`${button} w-fit`} onClick={() => open("forgot-password")}>Подтвердить почту</button>
+                </div>
+              )}
+              {account.recovery_admin === "active" && (
+                <button type="button" className={`${button} w-fit`} aria-expanded={showUsers}
+                  onClick={() => setShowUsers((value) => !value)}>
+                  {showUsers ? "Вернуться в настройки" : "Пользователи"}
+                </button>
+              )}
+              {showUsers ? <RecoveryUsers request={accountRequest} /> : (
+                <div className="grid items-start gap-4 md:grid-cols-2">
+                  <section className="grid min-w-0 gap-3" aria-labelledby="connection-settings-title">
+                    <h3 id="connection-settings-title" className="px-1 text-sm font-semibold text-slate-300">Подключения</h3>
+                    <KeySetting provider="garmin" label="Garmin Personal API key" configured={account.garmin}
+                      onChange={(garmin) => onChange((previous) => ({ ...previous, garmin }))} />
+                    <KeySetting provider="ai" label="GigaChat Authorization Key (необязательно)" configured={account.ai}
+                      onChange={(ai) => onChange((previous) => ({ ...previous, ai }))} />
+                  </section>
+                  <section className="grid min-w-0 gap-3" aria-labelledby="personal-settings-title">
+                    <h3 id="personal-settings-title" className="px-1 text-sm font-semibold text-slate-300">Предпочтения</h3>
+                    <WeatherSettings key={account.id} location={weatherLocation} request={accountRequest} onChange={onWeatherChange} />
+                    <RunnerPlanForm key={account.id} request={accountRequest} onSaved={onPlanSaved} />
+                  </section>
+                </div>
+              )}
+            </div>
+          </>
         )}
-        {account.recovery_admin === "active" && (
-          <button type="button" className={`${button} w-fit`} aria-expanded={showUsers}
-            onClick={() => setShowUsers((value) => !value)}>
-            {showUsers ? "Вернуться в настройки" : "Пользователи"}
-          </button>
-        )}
-        {showUsers ? <RecoveryUsers request={accountRequest} /> : <>
-        <KeySetting provider="garmin" label="Garmin Personal API key" configured={account.garmin}
-          onChange={(garmin) => onChange({ ...account, garmin })} />
-        <KeySetting provider="ai" label="GigaChat Authorization Key (необязательно)" configured={account.ai}
-          onChange={(ai) => onChange({ ...account, ai })} />
-        <WeatherSettings key={account.id} location={weatherLocation} request={accountRequest} onChange={onWeatherChange} />
-        <RunnerPlanForm key={account.id} request={accountRequest} onSaved={onPlanSaved} />
-        </>}
-      </section>}
+      </dialog>
       {error && !authOpen && <p className="mt-2 text-rose-300" role="alert">{error}</p>}
     </header>
   );

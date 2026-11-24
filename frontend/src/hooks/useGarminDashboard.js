@@ -37,6 +37,7 @@ function applyPlanChange(dashboard, { week, session }) {
 
 function useGarminDashboard(publicDemo) {
   const [data, setData] = useState(() => publicDemo ? buildPublicDemoDashboard() : { activities: [] });
+  const [loading, setLoading] = useState(!publicDemo);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lastWeekChange = useRef(null);
@@ -85,6 +86,9 @@ function useGarminDashboard(publicDemo) {
       })
       .catch((requestError) => {
         if (!signal.aborted) setError(requestError.message);
+      })
+      .finally(() => {
+        if (!signal.aborted) setLoading(false);
       });
 
     return () => {
@@ -155,6 +159,7 @@ function useGarminDashboard(publicDemo) {
     wellness: data.wellness,
     syncedAt: data?.connection?.synced_at || null,
     busy,
+    loading,
     error,
     sync: publicDemo ? undefined : sync,
   };
