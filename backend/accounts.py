@@ -12,6 +12,7 @@ from pydantic import BaseModel, EmailStr, Field
 from password_reset import RECOVERY_OWNER_EMAIL, RESET_TTL_SECONDS, reset_origin, send_reset_email
 from settings import settings
 from runner_plan import RunnerPlan
+from body_measurements import add_body_measurement_routes
 from weather import add_weather_routes
 
 COOKIE = "garmin_session"
@@ -239,4 +240,5 @@ def account_routes(database, verify_key):
         return {"ok": True}
 
     add_weather_routes(router, database, current)
+    add_body_measurement_routes(router, database, current)
     return router, current

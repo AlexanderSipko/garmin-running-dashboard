@@ -1,5 +1,6 @@
 export const dashboardPath = "/";
 export const workoutsPath = "/workouts";
+export const measurementsPath = "/measurements";
 export const guidePath = "/connect";
 export const telegramPath = "/telegram";
 

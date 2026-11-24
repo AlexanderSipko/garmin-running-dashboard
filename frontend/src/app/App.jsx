@@ -2,8 +2,9 @@ import DashboardFooter from "./DashboardFooter";
 import { useEffect, useState } from "react";
 import AccountPanel, { accountRequest } from "../components/AccountPanel";
 import { ConnectionGuide, DemoIntro } from "../components/DemoGuide";
+import BodyMeasurements from "../components/BodyMeasurements";
 import WorkoutHistory from "../components/WorkoutHistory";
-import { guidePath, telegramPath, workoutsPath } from "../lib/dashboardRoutes";
+import { guidePath, measurementsPath, telegramPath, workoutsPath } from "../lib/dashboardRoutes";
 import { initializeTelegramMiniApp } from "../lib/telegramMiniApp";
 import { DashboardRouter, useDashboardPath } from "./DashboardRouter";
 import CalendarPeriodExplorer from "../components/CalendarPeriodExplorer";
@@ -16,7 +17,9 @@ function Dashboard({ demo, account, planRevision, weather, onWeatherChange, page
   const dashboard = useGarminDashboard(demo);
 
   let content;
-  if (pagePath === workoutsPath) {
+  if (pagePath === measurementsPath) {
+    content = <BodyMeasurements account={account} request={accountRequest} />;
+  } else if (pagePath === workoutsPath) {
     content = <WorkoutHistory activities={dashboard.activities} loading={dashboard.loading} error={dashboard.error} demo={demo}
       onActivityUpdated={dashboard.replaceActivity} />;
   } else if (dashboard.loading) {
@@ -119,11 +122,11 @@ function DashboardApp() {
   }
 
   return (
-    <div className={`${theme} min-h-dvh min-w-0 pt-[var(--app-safe-top)] ${showGuide ? "" : "[--footer-height:calc(3.75rem+var(--app-safe-bottom))] pb-[var(--footer-height)]"}`}>
+    <div className={`${theme} min-h-dvh min-w-0 pt-[var(--app-safe-top)] ${showGuide ? "" : "[--footer-height:calc(3.25rem+var(--app-safe-bottom))] pb-[var(--footer-height)]"}`}>
       {!demoOnly && <AccountPanel account={account} weatherLocation={weather?.location} onWeatherChange={changeLocation} onChange={setAccount} onPlanSaved={() => setPlanRevision((value) => value + 1)} />}
       {showGuide ? <ConnectionGuide /> : (
         <>
-          {!account && pagePath !== workoutsPath && <DemoIntro />}
+          {!account && pagePath !== workoutsPath && pagePath !== measurementsPath && <DemoIntro />}
           <Dashboard key={account?.id || "demo"} demo={!account} account={account} planRevision={planRevision}
             weather={weather} onWeatherChange={changeLocation} pagePath={pagePath} />
         </>
