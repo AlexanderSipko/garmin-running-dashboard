@@ -23,7 +23,7 @@ def is_running(activity: dict[str, Any]) -> bool:
 
 
 def strength_summary(
-    rows: list[dict[str, Any]], *, include_details: bool = False, notes: dict | None = None,
+    rows: list[dict[str, Any]], *, include_details: bool = False,
 ) -> dict[str, Any]:
     sessions = [item for item in rows if is_strength(item)]
     durations = {}
@@ -43,16 +43,16 @@ def strength_summary(
         )[:5]
         recent_sessions = []
         for index, item in latest:
-            entry = (notes or {}).get(str(item.get("id")), {})
             session = {
                 "date": str(item.get("start_time"))[:10],
-                "name": str(entry.get("title") or item.get("name") or "")[:100],
+                "name": str(item.get("name") or "")[:100],
                 "type": item.get("type"),
                 "duration_minutes": round(durations[index] / 60, 1) if index in durations else None,
                 "average_heart_rate": item.get("avg_hr_bpm") or None,
             }
-            if entry.get("note"):
-                session["runner_note"] = entry["note"][:400]
+            description = str(item.get("description") or "").strip()
+            if description:
+                session["garmin_description"] = description[:400]
             recent_sessions.append(session)
         summary["recent_sessions"] = recent_sessions
     return summary

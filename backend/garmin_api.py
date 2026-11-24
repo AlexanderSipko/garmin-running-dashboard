@@ -30,6 +30,9 @@ def _clean_activity(row: dict[str, Any]) -> dict[str, Any]:
         "avg_speed_mps": row.get("averageSpeed"),
         "calories": row.get("calories"),
     }
+    description = row.get("description")
+    if isinstance(description, str) and description.strip():
+        values["description"] = description.strip()
     return {key: value for key, value in values.items() if value is not None}
 
 
@@ -302,6 +305,33 @@ def get_running_activity_splits(activity_id: str, *, key: str, cache_path: Path,
     return _split_rows(activity)
 
 
+def _activity_detail_fields(activity: dict, activity_id: str) -> dict[str, Any]:
+    if not isinstance(activity, dict):
+        raise ValueError("Unexpected Garmin activity response")
+    nested = activity.get("activity")
+    raw = {**activity, **nested} if isinstance(nested, dict) else activity
+    summary = raw.get("summaryDTO")
+    fields = {**summary, **raw} if isinstance(summary, dict) else raw
+    if fields.get("activityId") is not None and str(fields["activityId"]) != activity_id:
+        raise ValueError("Garmin activity ID did not match the request")
+    refreshed = _clean_activity(fields)
+    if "description" in fields:
+        note = fields["description"]
+        refreshed["description"] = note.strip() if isinstance(note, str) else None
+    return refreshed
+
+
+def get_activity_metadata(activity_id: str, *, key: str, cache_path: Path) -> dict[str, Any]:
+    """Fetch one activity's summary without downloading its FIT file."""
+    if not activity_id.isascii() or not activity_id.isdecimal() or int(activity_id) <= 0:
+        raise ValueError("Activity ID must be a positive integer")
+    timeout = settings.garmin_api_timeout_seconds
+    with PersonalApiAuthenticator(bearer_token_cache_file=cache_path, timeout=timeout) as authenticator:
+        token = authenticator.obtain_token(key)
+    with GarminPersonalApiClient(token.access_token, timeout=timeout) as client:
+        return _activity_detail_fields(client.get_activity(activity_id), activity_id)
+
+
 def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path) -> dict[str, Any]:
     """Fetch one run's splits and downsampled pace/HR/elevation FIT records."""
     if not activity_id.isascii() or not activity_id.isdecimal() or int(activity_id) <= 0:
@@ -314,20 +344,8 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         token.access_token, timeout=settings.garmin_activity_timeout_seconds
     ) as client:
         activity = client.get_activity(activity_id)
-        if not isinstance(activity, dict):
-            raise ValueError("Unexpected Garmin activity response")
-        nested = activity.get("activity")
-        raw = {**activity, **nested} if isinstance(nested, dict) else activity
-        if raw.get("activityId") is not None and str(raw["activityId"]) != activity_id:
-            raise ValueError("Garmin activity ID did not match the request")
-
+        refreshed_activity = _activity_detail_fields(activity, activity_id)
         splits = _split_rows(activity)
-        summary = raw.get("summaryDTO")
-        fields = {**summary, **raw} if isinstance(summary, dict) else raw
-        refreshed_activity = _clean_activity(fields)
-        if "description" in raw:
-            note = raw["description"]
-            refreshed_activity["description"] = note.strip() if isinstance(note, str) else None
         track_refresh_failed = False
         try:
             file_bytes = client.download_activity(activity_id)

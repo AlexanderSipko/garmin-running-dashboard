@@ -16,7 +16,8 @@ function Dashboard({ demo, account, planRevision, weather, onWeatherChange, page
 
   let content;
   if (pagePath === workoutsPath) {
-    content = <WorkoutHistory activities={dashboard.activities} loading={dashboard.loading} error={dashboard.error} demo={demo} />;
+    content = <WorkoutHistory activities={dashboard.activities} loading={dashboard.loading} error={dashboard.error} demo={demo}
+      onActivityUpdated={dashboard.replaceActivity} />;
   } else if (dashboard.loading) {
     content = <p role="status" className="mx-auto max-w-4xl px-4 py-8 text-sm text-slate-300">Загружаю личные данные…</p>;
   } else {

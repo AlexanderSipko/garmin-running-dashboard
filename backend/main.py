@@ -26,7 +26,7 @@ from request_security import check_origin, validation_error
 from settings import settings
 from runner_plan import plan_context
 from store import Database
-from strength_notes import StrengthNote, get_strength_note, store_strength_note
+from strength_notes import StrengthNote, get_strength_note, refresh_strength_activity, store_strength_note, strength_activity
 from training_week import (
     WeekPreferences, build_week_draft, change_week_distance, include_calendar_sessions,
     move_week_session, save_calendar_session, week_context, week_progress,
@@ -34,7 +34,7 @@ from training_week import (
 
 database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
-COACH_CONTEXT_VERSION = 8
+COACH_CONTEXT_VERSION = 9
 COACH_CHAT_TURNS = 60
 
 
@@ -70,6 +70,7 @@ def account_dashboard(days: int) -> dict[str, Any]:
 def call_garmin_in_process(method: str, key: str, cache_path: Path, *args):
     from garmin_api import (
         get_activities,
+        get_activity_metadata,
         get_running_activity_detail,
         get_running_activity_splits,
         get_wellness_metrics,
@@ -89,7 +90,11 @@ def call_garmin_in_process(method: str, key: str, cache_path: Path, *args):
     if method == "wellness_metrics":
         start, end = args
         return get_wellness_metrics(start.isoformat(), end.isoformat(), key=key, cache_path=cache_path)
-    tool = {"activity_detail": get_running_activity_detail, "activity_splits": get_running_activity_splits}[method]
+    tool = {
+        "activity_detail": get_running_activity_detail,
+        "activity_splits": get_running_activity_splits,
+        "activity_metadata": get_activity_metadata,
+    }[method]
     return tool(str(args[0]), key=key, cache_path=cache_path)
 
 
@@ -219,9 +224,8 @@ def analyze_period(
             if turn.get("focus_date") == day_key
         ][-4:]
 
-    strength_notes = store.get("strength_notes", {})
     activity_summary = {
-        "strength": strength_summary(selected, include_details=True, notes=strength_notes),
+        "strength": strength_summary(selected, include_details=True),
         "previous_strength": strength_summary(previous) if previous is not None else None,
         "last_sync_at": store.get("synced_at"),
     }
@@ -253,7 +257,7 @@ def analyze_period(
         activity_summary["current_month_strength"] = {
             "from": month_start.isoformat(),
             "to": reference_day.isoformat(),
-            **strength_summary(month_rows, include_details=True, notes=strength_notes),
+            **strength_summary(month_rows, include_details=True),
         }
 
     try:
@@ -732,6 +736,26 @@ def save_strength_note(activity_id: int, entry: StrengthNote) -> dict:
     return {"entry": entry.model_dump()}
 
 
+@app.post("/api/activities/{activity_id}/strength-refresh")
+async def refresh_strength_from_garmin(activity_id: int) -> dict:
+    strength_activity(read_store(), activity_id)
+    try:
+        fields = await garmin_call("activity_metadata", activity_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Garmin strength refresh failed: %s", type(exc).__name__)
+        raise HTTPException(502, "Не удалось обновить силовую из Garmin. Попробуй ещё раз.") from None
+
+    updated = {}
+
+    def save(store: dict) -> None:
+        updated.update(refresh_strength_activity(store, activity_id, fields))
+
+    await run_in_threadpool(update_store, save)
+    return {"activity": updated}
+
+
 @app.get("/api/activities/{activity_id}/splits")
 async def activity_splits(activity_id: int) -> dict[str, Any]:
     if activity_id <= 0:
@@ -801,6 +825,7 @@ async def activity_detail(
                 if updated_activity != previous:
                     rows[index] = updated_activity
                     rows.sort(key=lambda row: str(row.get("start_time") or ""), reverse=True)
+                    store["review_revision"] = store.get("review_revision", 0) + 1
                     store.pop("coach_daily", None)
                 return
         raise HTTPException(404, "Тренировка больше не найдена в истории.")

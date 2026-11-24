@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ChevronDown, Copy, Dumbbell, Footprints } from "lucide-react";
 import { getActivityCategory, getActivityDate } from "../lib/calendarAnalytics";
 import { fmtDuration } from "../lib/format";
 import { PageLink } from "../app/DashboardRouter";
+import RefreshActivityButton from "./RefreshActivityButton";
 import { dayPath } from "../lib/dashboardRoutes";
 
 const filters = [["all", "Все"], ["running", "Бег"], ["strength", "Силовые"]];
@@ -11,31 +12,11 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "lo
 const kmFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
 const control = "rounded-lg border border-[#42535b] px-3 py-2 text-sm font-semibold hover:bg-[#283740]";
 
-function Description({ activity, strength, demo }) {
-  const [result, setResult] = useState(null);
+function Description({ activity, strength, demo, onActivityUpdated }) {
   const [notice, setNotice] = useState("");
-  const [retry, setRetry] = useState(0);
   const copyText = useRef(null);
-  const readsNote = strength && !demo && /^\d+$/.test(String(activity.id));
-
-  useEffect(() => {
-    if (!readsNote) return;
-    const controller = new AbortController();
-    fetch(`/api/activities/${activity.id}/strength-note`, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error();
-        return response.json();
-      })
-      .then(({ entry }) => {
-        if (!controller.signal.aborted) setResult({ text: entry?.note || "" });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setResult({ error: true });
-      });
-    return () => controller.abort();
-  }, [activity.id, readsNote, retry]);
-
-  const text = (readsNote ? result?.text : activity.description) || "";
+  const text = activity.description?.trim() || "";
+  const duration = activity.moving_duration_seconds || activity.duration_seconds;
 
   async function copy() {
     try {
@@ -55,16 +36,19 @@ function Description({ activity, strength, demo }) {
 
   return (
     <div className="grid gap-3 border-t border-[#344650] px-4 pb-4 pt-3 text-sm">
-      {readsNote && !result && <p role="status" className="text-slate-400">Загружаю описание…</p>}
-      {result?.error && (
-        <>
-          <p role="alert" className="text-rose-300">Не удалось загрузить описание.</p>
-          <button className={`${control} w-fit`} type="button" onClick={() => { setResult(null); setRetry((value) => value + 1); }}>Повторить</button>
-        </>
+      {(duration > 0 || activity.avg_hr_bpm > 0) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300">
+          {duration > 0 && <span>Время · {fmtDuration(duration)}</span>}
+          {activity.avg_hr_bpm > 0 && <span>Средний пульс · {Math.round(activity.avg_hr_bpm)} уд/мин</span>}
+        </div>
       )}
-      {(!readsNote || result?.text === "") && !text && <p className="text-slate-400">Сохранённого описания пока нет.</p>}
+      {!text && <p className="text-slate-400">Сохранённого описания пока нет.</p>}
       {text && <p ref={copyText} className="whitespace-pre-wrap break-words leading-relaxed text-slate-100">{text}</p>}
       <div className="flex flex-wrap items-center gap-2">
+        {!demo && <RefreshActivityButton activityId={activity.id} strength={strength} onActivityUpdated={(updated) => {
+          setNotice("");
+          onActivityUpdated(updated);
+        }} />}
         {text && <button type="button" className={`${control} inline-flex items-center gap-2`} onClick={copy}><Copy size={14} aria-hidden="true" /> Скопировать описание</button>}
         <PageLink className={`${control} inline-flex items-center gap-2`} to={dayPath(String(activity.start_time).slice(0, 10))}>
           Открыть день <ArrowUpRight size={14} aria-hidden="true" />
@@ -75,7 +59,7 @@ function Description({ activity, strength, demo }) {
   );
 }
 
-export default function WorkoutHistory({ activities, loading, error, demo }) {
+export default function WorkoutHistory({ activities, loading, error, demo, onActivityUpdated }) {
   const [filter, setFilter] = useState("all");
   const [year, setYear] = useState("all");
   const [limit, setLimit] = useState(pageSize);
@@ -126,7 +110,7 @@ export default function WorkoutHistory({ activities, loading, error, demo }) {
                 className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left hover:bg-[#23343c]">
                 <Icon size={19} aria-hidden="true" className={strength ? "shrink-0 text-[#b7c4ff]" : "shrink-0 text-[#ffc988]"} />
                 <span className="grid min-w-0 flex-1 gap-0.5">
-                  <b className="break-words">{activity.strength_title || activity.name || (strength ? "Силовая" : "Пробежка")}</b>
+                  <b className="break-words">{activity.name || (strength ? "Силовая" : "Пробежка")}</b>
                   <small className="text-sm text-slate-400">
                     {dateFormat.format(date)}
                     {strength ? (duration > 0 && ` · ${fmtDuration(duration)}`)
@@ -135,7 +119,7 @@ export default function WorkoutHistory({ activities, loading, error, demo }) {
                 </span>
                 <ChevronDown size={17} aria-hidden="true" className={open ? "shrink-0 rotate-180" : "shrink-0"} />
               </button>
-              {open && <Description activity={activity} strength={strength} demo={demo} />}
+              {open && <Description activity={activity} strength={strength} demo={demo} onActivityUpdated={onActivityUpdated} />}
             </li>
           );
         })}
