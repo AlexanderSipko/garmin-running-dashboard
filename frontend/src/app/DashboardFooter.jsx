@@ -9,7 +9,7 @@ export default function DashboardFooter({ currentPath, onSync, syncing, loading 
   const syncLabel = syncing ? "Синхронизация с Garmin" : "Обновить Garmin";
 
   return (
-    <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-[#33434b] bg-[#162128]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+    <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-[#33434b] bg-[#162128]/95 pb-[var(--app-safe-bottom)] backdrop-blur">
       <nav aria-label="Разделы дашборда"
         className={`mx-auto grid h-14 w-full max-w-md gap-1.5 px-3 py-1.5 sm:gap-2 ${onSync ? "grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]" : "grid-cols-2"}`}>
         <PageLink to={dashboardPath} aria-current={!workoutsOpen ? "page" : undefined} className={linkClass}>

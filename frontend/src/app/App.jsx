@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import AccountPanel, { accountRequest } from "../components/AccountPanel";
 import { ConnectionGuide, DemoIntro } from "../components/DemoGuide";
 import WorkoutHistory from "../components/WorkoutHistory";
-import { guidePath, workoutsPath } from "../lib/dashboardRoutes";
+import { guidePath, telegramPath, workoutsPath } from "../lib/dashboardRoutes";
+import { initializeTelegramMiniApp } from "../lib/telegramMiniApp";
 import { DashboardRouter, useDashboardPath } from "./DashboardRouter";
 import CalendarPeriodExplorer from "../components/CalendarPeriodExplorer";
 import useWeatherForecast from "../hooks/useWeatherForecast";
@@ -75,6 +76,13 @@ function DashboardApp() {
   const showGuide = pagePath === guidePath;
 
   useEffect(() => {
+    if (pagePath === telegramPath) {
+      // The dashboard can still open if Telegram's script is unavailable.
+      void initializeTelegramMiniApp().catch(() => {});
+    }
+  }, [pagePath]);
+
+  useEffect(() => {
     if (demoOnly) return;
     const controller = new AbortController();
     accountRequest("", { signal: controller.signal })
@@ -110,7 +118,7 @@ function DashboardApp() {
   }
 
   return (
-    <div className={`${theme} min-h-dvh ${showGuide ? "" : "[--footer-height:calc(3.75rem+env(safe-area-inset-bottom))] pb-[var(--footer-height)]"}`}>
+    <div className={`${theme} min-h-dvh min-w-0 pt-[var(--app-safe-top)] ${showGuide ? "" : "[--footer-height:calc(3.75rem+var(--app-safe-bottom))] pb-[var(--footer-height)]"}`}>
       {!demoOnly && <AccountPanel account={account} weatherLocation={weather?.location} onWeatherChange={changeLocation} onChange={setAccount} onPlanSaved={() => setPlanRevision((value) => value + 1)} />}
       {showGuide ? <ConnectionGuide /> : (
         <>

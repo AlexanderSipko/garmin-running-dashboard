@@ -5,6 +5,7 @@
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/backend?path=:path*" },
     { "source": "/workouts", "destination": "/index.html" },
+    { "source": "/telegram", "destination": "/index.html" },
     { "source": "/connect", "destination": "/index.html" },
     { "source": "/calendar/:day", "destination": "/index.html" }
   ]

@@ -1,6 +1,7 @@
 export const dashboardPath = "/";
 export const workoutsPath = "/workouts";
 export const guidePath = "/connect";
+export const telegramPath = "/telegram";
 
 export function dayPath(date) {
   return `/calendar/${date}`;
