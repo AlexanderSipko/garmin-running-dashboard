@@ -4,7 +4,8 @@ import json
 from datetime import date, timedelta
 from typing import Any
 
-from coach_tools import GarminCoachTools, pace_label
+from activity_metrics import pace_label
+from coach_tools import GarminCoachTools
 from providers.gigachat import GigaChatClient
 from runner_plan import PLAN_RULES
 
@@ -242,10 +243,10 @@ class RunningCoach:
 
         runs.sort(key=lambda run: run["date"])
         total_km = sum(run["distance_km"] for run in runs)
-        total_seconds = sum(run["duration_seconds"] for run in runs)
         timed_runs = [run for run in runs if run["duration_seconds"] > 0]
+        total_seconds = sum(run["duration_seconds"] for run in timed_runs)
         timed_km = sum(run["distance_km"] for run in timed_runs)
-        heart_rate_runs = [run for run in runs if run["average_heart_rate"] > 0]
+        heart_rate_runs = [run for run in timed_runs if run["average_heart_rate"] > 0]
         heart_rate_seconds = sum(run["duration_seconds"] for run in heart_rate_runs)
 
         context: dict[str, Any] = {

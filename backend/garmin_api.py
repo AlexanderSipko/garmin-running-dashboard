@@ -238,11 +238,9 @@ def _metric_rows(payload: Any, metric: str) -> list[dict[str, Any]]:
             if value is None and isinstance(nested, dict):
                 value = nested.get("restingValue") or nested.get("restingHeartRate") or nested.get("restingHr")
         elif metric == "weight":
-            value = row.get("weight") or row.get("weightInGrams") or row.get("weightInKg")
-            if value is not None:
-                value = float(value)
-                if "Grams" in "".join(row.keys()) or value > 1000:
-                    value /= 1000
+            weight_field = next((key for key in ("weight", "weightInGrams", "weightInKg")
+                                 if row.get(key) is not None), None)
+            value = row.get(weight_field)
         elif metric == "sleep":
             value = next((row.get(key) for key in (
                 "sleepTimeSeconds", "totalSleepSeconds", "sleepDurationSeconds",
@@ -260,11 +258,15 @@ def _metric_rows(payload: Any, metric: str) -> list[dict[str, Any]]:
                 "overallStressLevel", "stressLevel",
             ) if row.get(key) is not None), None)
         try:
-            if value is not None and float(value) > 0:
-                numeric_value = float(value)
-                if metric == "sleep" and numeric_value > 24 * 60:
-                    numeric_value /= 3600
-                results_by_date[(day, numeric_value)] = {"date": day, "value": numeric_value}
+            numeric_value = float(value)
+            if not math.isfinite(numeric_value) or numeric_value <= 0:
+                continue
+            if metric == "sleep":
+                numeric_value /= 3600
+            elif metric == "weight" and (weight_field == "weightInGrams" or
+                                         (weight_field == "weight" and numeric_value > 1000)):
+                numeric_value /= 1000
+            results_by_date[(day, numeric_value)] = {"date": day, "value": numeric_value}
         except (TypeError, ValueError):
             continue
     return list(results_by_date.values())
@@ -326,11 +328,13 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         if "description" in raw:
             note = raw["description"]
             refreshed_activity["description"] = note.strip() if isinstance(note, str) else None
+        track_refresh_failed = False
         try:
             file_bytes = client.download_activity(activity_id)
             points, sample_count, route = _fit_track_rows(file_bytes)
             track_message = "" if points else "В исходном файле Garmin нет точек записи FIT."
         except Exception:
+            track_refresh_failed = True
             points, sample_count, route = [], 0, []
             track_message = "Garmin не вернул исходный FIT-файл этой тренировки."
 
@@ -341,6 +345,7 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         "points": points,
         "route": route,
         "sample_count": sample_count,
+        "track_refresh_failed": track_refresh_failed,
         "track_available": bool(points),
         "track_message": track_message,
     }
@@ -413,9 +418,9 @@ def get_wellness_metrics(start_date: str, end_date: str, *, key: str, cache_path
                             time.sleep(0.5)
                     metric_rows.extend(_metric_rows(payload, metric))
                 metrics[metric] = metric_rows
-            except Exception as exc:
+            except Exception:
                 metrics[metric] = metric_rows
-                errors[metric] = str(exc)[:240]
+                errors[metric] = "Не удалось загрузить показатель Garmin."
 
         # Some Garmin accounts return an empty range summary even though daily
         # sleep records exist. Recover the recent dashboard window via the

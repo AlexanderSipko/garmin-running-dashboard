@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { CalendarDays, Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
-import { dayKey, weeklyVolumeComparison } from "../lib/calendarAnalytics";
+import { averageRunningPace, dayKey, weeklyVolumeComparison } from "../lib/calendarAnalytics";
 import { fmtPace } from "../lib/format";
 import { localDateKey } from "../lib/wellnessDates";
 
@@ -110,7 +110,10 @@ export default function MonthDayCalendar({
         {calendarWeeks.map((week) => {
           const weekRuns = week.days.map((day) => daySummaries.get(dayKey(day))).filter(Boolean);
           const weekKm = weekRuns.reduce((sum, item) => sum + item.runKm, 0);
-          const weekSeconds = weekRuns.reduce((sum, item) => sum + item.runSeconds, 0);
+          const weekPace = averageRunningPace({
+            timedKm: weekRuns.reduce((sum, item) => sum + item.timedKm, 0),
+            timedSeconds: weekRuns.reduce((sum, item) => sum + item.timedSeconds, 0),
+          });
           const weekHrWeight = weekRuns.reduce((sum, item) => sum + item.hrWeight, 0);
           const weekHrSeconds = weekRuns.reduce((sum, item) => sum + item.hrSeconds, 0);
           const weekStart = week.days[0];
@@ -148,7 +151,7 @@ export default function MonthDayCalendar({
                   </span>
                   <span className="inline-flex items-center gap-1 whitespace-nowrap">
                     <Gauge size={12} className="shrink-0 text-[color:var(--soft)]" aria-label="Темп" />
-                    {weekKm ? <span>{fmtPace(weekSeconds / weekKm)}<small className="text-[10px] text-[color:var(--soft)]">/км</small></span> : "—"}
+                    {weekPace != null ? <span>{fmtPace(weekPace)}<small className="text-[10px] text-[color:var(--soft)]">/км</small></span> : "—"}
                   </span>
                   <span className="inline-flex items-center gap-1 whitespace-nowrap">
                     <HeartPulse size={12} className="shrink-0 text-[color:var(--soft)]" aria-label="Пульс" />

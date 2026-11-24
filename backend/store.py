@@ -8,7 +8,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager, closing
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 
 class Database:
@@ -147,15 +147,30 @@ class Database:
 
     def update_activity_detail(
         self, user_id: str, activity_id: str, detail: dict, callback: Callable[[dict], None],
-    ) -> None:
+    ) -> dict:
         mark = self.json_parameter()
+        detail = dict(detail)
+        track_failed = detail.pop("track_refresh_failed", False)
         with self.transaction() as connection:
             self._update_user_data(connection, user_id, callback)
+            if track_failed:
+                row = connection.execute(
+                    f"SELECT payload FROM activity_details WHERE user_id = {mark} AND activity_id = {mark}",
+                    (user_id, activity_id),
+                ).fetchone()
+                previous = json.loads(row[0]) if row else {}
+                if previous.get("points") or previous.get("route"):
+                    for field in ("points", "route", "sample_count", "track_available"):
+                        if field in previous:
+                            detail[field] = previous[field]
+                    detail["track_message"] = "Не удалось обновить трек. Показана сохранённая запись."
             connection.execute(
                 f"INSERT INTO activity_details (user_id, activity_id, payload) VALUES ({mark}, {mark}, {mark}) "
                 "ON CONFLICT (user_id, activity_id) DO UPDATE SET payload = excluded.payload",
                 (user_id, activity_id, json.dumps(detail, ensure_ascii=False)),
             )
+
+        return detail
 
     def update(self, user_id: str, callback: Callable[[dict], None]) -> None:
         with self.transaction() as connection:

@@ -4,6 +4,8 @@ import json
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from activity_metrics import activity_kind
+
 
 def _activity_key(activity: dict[str, Any]) -> str:
     activity_id = activity.get("id")
@@ -54,22 +56,30 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
     start_date = today - timedelta(days=days - 1)
     activities = [
         item for item in store.get("activities", [])
-        if (parse_date(item.get("start_time")) or date.min) >= start_date
+        if start_date <= (parse_date(item.get("start_time")) or date.min) <= today
     ]
     activities.sort(key=lambda item: item.get("start_time", ""), reverse=True)
-    total_meters = sum(float(item.get("distance_meters") or 0) for item in activities)
-    total_seconds = sum(float(item.get("moving_duration_seconds") or item.get("duration_seconds") or 0) for item in activities)
+    runs = [item for item in activities if activity_kind(item) == "run"]
+    total_meters = total_seconds = timed_meters = timed_seconds = longest_meters = 0.0
     week_start = monday_of(today)
-    this_week = [item for item in activities if (parse_date(item.get("start_time")) or date.min) >= week_start]
-    week_meters = sum(float(item.get("distance_meters") or 0) for item in this_week)
-    longest_meters = max((float(item.get("distance_meters") or 0) for item in activities), default=0)
-    pace_seconds = total_seconds / (total_meters / 1000) if total_meters else None
     weekly_totals: dict[str, float] = {}
-    for item in activities:
-        day = parse_date(item.get("start_time"))
+    week_runs = 0
+    for run in runs:
+        meters = float(run.get("distance_meters") or 0)
+        seconds = float(run.get("moving_duration_seconds") or run.get("duration_seconds") or 0)
+        total_meters += meters
+        total_seconds += seconds
+        longest_meters = max(longest_meters, meters)
+        if meters > 0 and seconds > 0:
+            timed_meters += meters
+            timed_seconds += seconds
+        day = parse_date(run.get("start_time"))
         if day:
             key = monday_of(day).isoformat()
-            weekly_totals[key] = weekly_totals.get(key, 0) + float(item.get("distance_meters") or 0) / 1000
+            weekly_totals[key] = weekly_totals.get(key, 0) + meters / 1000
+            if week_start <= day <= today:
+                week_runs += 1
+    pace_seconds = timed_seconds * 1000 / timed_meters if timed_meters else None
     weekly = []
     for offset in range(11, -1, -1):
         monday = week_start - timedelta(weeks=offset)
@@ -129,13 +139,13 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
         },
         "period_days": days,
         "stats": {
-            "run_count": len(activities),
+            "run_count": len(runs),
             "total_km": round(total_meters / 1000, 1),
             "total_hours": round(total_seconds / 3600, 1),
             "average_pace_seconds_per_km": round(pace_seconds) if pace_seconds else None,
             "longest_km": round(longest_meters / 1000, 1),
-            "this_week_km": round(week_meters / 1000, 1),
-            "this_week_runs": len(this_week),
+            "this_week_km": round(weekly_totals.get(week_start.isoformat(), 0), 1),
+            "this_week_runs": week_runs,
         },
         "weekly": weekly,
         "deload_weeks": store.get("deload_weeks", {}),
@@ -145,6 +155,10 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
             "years": yearly_wellness,
             "metrics": wellness_series,
             "synced_at": store.get("wellness_synced_at"),
-            "errors": store.get("wellness_errors", {}),
+            # Historical snapshots can contain raw provider exception messages.
+            "errors": {
+                name: "Не удалось загрузить показатель Garmin."
+                for name in store.get("wellness_errors", {})
+            },
         },
     }

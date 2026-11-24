@@ -5,7 +5,7 @@ from math import isfinite
 from statistics import mean
 
 from dashboard_data import parse_date
-from training_week import activity_kind
+from activity_metrics import activity_kind
 
 
 def recovery_indicators(store: dict, day: date) -> dict:

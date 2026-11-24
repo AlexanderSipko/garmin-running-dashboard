@@ -3,7 +3,6 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Literal
-from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -47,13 +46,6 @@ def decrypt(value):
         return cipher().decrypt(value.encode()).decode()
     except InvalidToken:
         raise HTTPException(503, "Не удалось расшифровать сохранённый ключ.") from None
-
-
-def check_origin(request):
-    origin = request.headers.get("origin")
-    if request.method not in {"GET", "HEAD", "OPTIONS"} and origin:
-        if urlsplit(origin).netloc != request.headers.get("host") and origin != settings.app_origin:
-            raise HTTPException(403, "Запрос с другого сайта.")
 
 
 def account_routes(database, verify_key):

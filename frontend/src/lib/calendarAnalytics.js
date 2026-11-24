@@ -14,27 +14,44 @@ export function dayKey(date) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
-function emptySummary() {
-  return { runKm: 0, runSeconds: 0, hrSeconds: 0, hrWeight: 0, runCount: 0, strengthCount: 0 };
+export function emptySummary() {
+  return { runKm: 0, runSeconds: 0, timedKm: 0, timedSeconds: 0, hrSeconds: 0, hrWeight: 0, runCount: 0, strengthCount: 0 };
 }
 
-function accumulate(summaries, key, activity, category) {
-  const summary = summaries.get(key) || emptySummary();
+export function averageRunningPace(summary) {
+  return summary?.timedKm > 0 ? summary.timedSeconds / summary.timedKm : null;
+}
 
+function addActivity(summary, activity, category) {
   if (category === "running") {
     const seconds = Number(activity.moving_duration_seconds || activity.duration_seconds || 0);
+    const km = Number(activity.distance_meters || 0) / 1000;
     const heartRate = Number(activity.avg_hr_bpm || 0);
-    summary.runKm += Number(activity.distance_meters || 0) / 1000;
+    summary.runKm += km;
     summary.runSeconds += seconds;
     summary.runCount += 1;
-    if (heartRate > 0) {
+    if (km > 0 && seconds > 0) {
+      summary.timedKm += km;
+      summary.timedSeconds += seconds;
+    }
+    if (heartRate > 0 && seconds > 0) {
       summary.hrSeconds += heartRate * seconds;
       summary.hrWeight += seconds;
     }
   } else if (category === "strength") {
     summary.strengthCount += 1;
   }
+}
 
+export function summarizeActivities(activities) {
+  const summary = emptySummary();
+  for (const activity of activities) addActivity(summary, activity, getActivityCategory(activity));
+  return summary;
+}
+
+function accumulate(summaries, key, activity, category) {
+  const summary = summaries.get(key) || emptySummary();
+  addActivity(summary, activity, category);
   summaries.set(key, summary);
 }
 

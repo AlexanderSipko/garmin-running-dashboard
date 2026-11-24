@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { localDateKey } from "../lib/wellnessDates";
 import { fmtPace } from "../lib/format";
-import { dayKey, getActivityCategory, getActivityDate, summarizeCalendar } from "../lib/calendarAnalytics";
+import { averageRunningPace, dayKey, emptySummary, getActivityCategory, getActivityDate, summarizeActivities, summarizeCalendar } from "../lib/calendarAnalytics";
 import DaySummary from "./DaySummary";
 import DayTrainingPlan from "./DayTrainingPlan";
 import WorkoutReview from "./WorkoutReview";
@@ -81,29 +81,11 @@ function CalendarPeriodExplorer({
     [periodActivities, selectedTypes]
   );
 
-  const matchingRuns = matchingActivities.filter((activity) => getActivityCategory(activity) === "running");
-  const strengthCount = matchingActivities.filter((activity) => getActivityCategory(activity) === "strength").length;
-  const averageKm = matchingRuns.length
-    ? matchingRuns.reduce((sum, activity) => sum + Number(activity.distance_meters || 0) / 1000, 0) / matchingRuns.length
-    : 0;
-  const totalRunKm = matchingRuns.reduce(
-    (sum, activity) => sum + Number(activity.distance_meters || 0) / 1000,
-    0
-  );
-  const totalRunSeconds = matchingRuns.reduce(
-    (sum, activity) => sum + Number(activity.moving_duration_seconds || activity.duration_seconds || 0),
-    0
-  );
-  const hrWeight = matchingRuns.reduce((sum, activity) =>
-    sum + (Number(activity.avg_hr_bpm) > 0
-      ? Number(activity.moving_duration_seconds || activity.duration_seconds || 0)
-      : 0), 0);
-  const weightedHr = matchingRuns.reduce((sum, activity) =>
-    sum + (Number(activity.avg_hr_bpm) > 0
-      ? Number(activity.avg_hr_bpm) * Number(activity.moving_duration_seconds || activity.duration_seconds || 0)
-      : 0), 0);
-  const averageHr = hrWeight ? Math.round(weightedHr / hrWeight) : null;
-  const averagePace = totalRunKm ? totalRunSeconds / totalRunKm : null;
+  const periodSummary = summarizeActivities(matchingActivities);
+  const { runCount, strengthCount, runKm: totalRunKm, hrWeight, hrSeconds } = periodSummary;
+  const averageKm = runCount ? totalRunKm / runCount : 0;
+  const averageHr = hrWeight ? Math.round(hrSeconds / hrWeight) : null;
+  const averagePace = averageRunningPace(periodSummary);
   const showRunning = selectedTypes.includes("running");
   const showStrength = selectedTypes.includes("strength");
   const chartYear = selection.year;
@@ -124,7 +106,7 @@ function CalendarPeriodExplorer({
         weekend: weekday === 0 || weekday === 6,
         deloadWeek: deloadWeeks?.[weekKey] ? weekKey : null,
         runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,
-        pace: summary?.runKm ? summary.runSeconds / summary.runKm : null,
+        pace: averageRunningPace(summary),
         avgHr: summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
         strengthCount: summary?.strengthCount || 0,
       };
@@ -140,7 +122,7 @@ function CalendarPeriodExplorer({
       return {
         label: monthShortNames[month],
         runKm: isFuture ? null : Number((summary?.runKm || 0).toFixed(1)),
-        pace: !isFuture && summary?.runKm ? summary.runSeconds / summary.runKm : null,
+        pace: isFuture ? null : averageRunningPace(summary),
         avgHr: !isFuture && summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
         strengthCount: isFuture ? null : summary?.strengthCount || 0,
       };
@@ -202,15 +184,8 @@ function CalendarPeriodExplorer({
         <div id="calendar-years" className={`period-explorer-years grid gap-2 max-[760px]:grid-flow-col max-[760px]:auto-cols-[minmax(145px,42vw)] max-[760px]:overflow-x-auto max-[760px]:snap-x max-[760px]:[&>*]:snap-start ${yearsOpen ? "" : "max-[760px]:hidden"}`}>
           {availableYears.map((year) => {
             const yearOpen = expandedYear === year;
-            const summary = yearSummaries.get(year) || {
-              runKm: 0,
-              runSeconds: 0,
-              hrSeconds: 0,
-              hrWeight: 0,
-              runCount: 0,
-              strengthCount: 0,
-            };
-            const paceSeconds = summary.runKm ? summary.runSeconds / summary.runKm : null;
+            const summary = yearSummaries.get(year) || emptySummary();
+            const paceSeconds = averageRunningPace(summary);
             const averageHr = summary.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null;
             return (
               <section className="period-year" key={year}>
@@ -417,8 +392,8 @@ function CalendarPeriodExplorer({
             "[&_>_span_svg]:text-[color:#b1beff] max-[420px]:min-h-[68px]",
           ].join(" ")}>
             <span><Dumbbell />Тренировки</span>
-            <b>{matchingRuns.length + strengthCount}</b>
-            <small>{matchingRuns.length} бег · {strengthCount} зал</small>
+            <b>{runCount + strengthCount}</b>
+            <small>{runCount} бег · {strengthCount} зал</small>
           </article>
           <article className={[
             "period-summary-metric average-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
@@ -435,7 +410,7 @@ function CalendarPeriodExplorer({
             "[&_>_span_svg]:text-[color:#e9bd79] max-[420px]:min-h-[68px]",
           ].join(" ")}>
             <span><Activity />Среднее за бег</span>
-            <b>{matchingRuns.length ? averageKm.toFixed(1) : "—"}<small>км</small></b>
+            <b>{runCount ? averageKm.toFixed(1) : "—"}<small>км</small></b>
           </article>
         </div>
 
@@ -474,20 +449,14 @@ function CalendarPeriodExplorer({
               const currentDate = new Date();
               const monthLocked = publicDemo && (expandedYear > currentDate.getFullYear()
                 || (expandedYear === currentDate.getFullYear() && month > currentDate.getMonth()));
-              const summary = monthSummaries.get(`${expandedYear}-${month}`) || {
-                runKm: 0,
-                runSeconds: 0,
-                hrSeconds: 0,
-                hrWeight: 0,
-                strengthCount: 0,
-              };
+              const summary = monthSummaries.get(`${expandedYear}-${month}`) || emptySummary();
               const showRunning = selectedTypes.includes("running");
               const showStrength = !showRunning && selectedTypes.includes("strength");
               const monthSelected = selection.year === expandedYear
                 && selection.month === month
                 && selection.type !== "year";
               const averageHr = summary.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null;
-              const pace = summary.runKm ? summary.runSeconds / summary.runKm : null;
+              const pace = averageRunningPace(summary);
               const monthLabel = showRunning
                 ? `${monthName} ${expandedYear}: ${summary.runKm.toFixed(1)} км, ${averageHr || "нет данных о пульсе"} bpm, темп ${fmtPace(pace)}`
                 : showStrength
@@ -566,7 +535,7 @@ function CalendarPeriodExplorer({
               showRunning={showRunning} showStrength={showStrength}
               periodSummary={{
                 distanceKm: monthlySummary?.runKm || 0,
-                pace: monthlySummary?.runKm ? monthlySummary.runSeconds / monthlySummary.runKm : null,
+                pace: averageRunningPace(monthlySummary),
                 heartRate: monthlySummary?.hrWeight ? Math.round(monthlySummary.hrSeconds / monthlySummary.hrWeight) : null,
                 strengthCount: monthlySummary?.strengthCount || 0,
               }}

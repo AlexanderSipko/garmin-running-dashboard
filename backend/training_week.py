@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from activity_metrics import activity_kind
 from dashboard_data import monday_of, parse_date
 
 RUN_KINDS = {"easy", "recovery", "long", "tempo", "intervals", "quality", "race"}
@@ -27,13 +28,6 @@ class WeekPreferences(BaseModel):
         if self.long_day is not None and self.long_day not in self.available_days:
             raise ValueError("Выбери день для длительной из доступных дней.")
         return self
-
-
-def activity_kind(row: dict) -> str | None:
-    kind = str(row.get("type") or "").lower().replace("-", "_").replace(" ", "_")
-    if any(tag in kind for tag in ("strength", "gym", "weight_training", "силов", "зал")):
-        return "strength"
-    return "run" if "run" in kind else None
 
 
 def draft_start(activities: list[dict], today: date) -> date:

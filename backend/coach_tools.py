@@ -10,25 +10,10 @@ from typing import Literal
 from mcp.server.fastmcp import FastMCP
 from mcp.shared.memory import create_connected_server_and_client_session
 
+from activity_metrics import activity_pace, pace_label
 from dashboard_data import parse_date
 from garmin_api import get_running_activity_splits, get_wellness_series
 from readiness import recovery_indicators
-
-
-def pace_label(seconds: int | None) -> str | None:
-    if seconds is None:
-        return None
-    total_seconds = round(seconds)
-    if total_seconds <= 0:
-        return None
-    minutes, remainder = divmod(total_seconds, 60)
-    return f"{minutes}:{remainder:02d} мин/км"
-
-
-def activity_pace(activity: dict) -> str | None:
-    distance = float(activity.get("distance_meters") or 0)
-    seconds = float(activity.get("moving_duration_seconds") or activity.get("duration_seconds") or 0)
-    return pace_label(round(seconds * 1000 / distance)) if distance > 0 and seconds > 0 else None
 
 
 class GarminCoachTools:

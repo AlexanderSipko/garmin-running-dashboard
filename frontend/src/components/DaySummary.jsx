@@ -1,16 +1,15 @@
 import { fmtDuration, fmtPace } from "../lib/format";
 
+import { averageRunningPace, summarizeActivities } from "../lib/calendarAnalytics";
+
 export default function DaySummary({ activities, date }) {
-  const distance = activities.reduce((sum, item) => sum + Number(item.distance_meters || 0), 0) / 1000;
-  const seconds = activities.reduce((sum, item) => sum + Number(item.moving_duration_seconds || item.duration_seconds || 0), 0);
-  const timed = activities.filter((item) => Number(item.avg_hr_bpm) > 0);
-  const hrSeconds = timed.reduce((sum, item) => sum + Number(item.avg_hr_bpm) * Number(item.moving_duration_seconds || item.duration_seconds || 0), 0);
-  const hrTime = timed.reduce((sum, item) => sum + Number(item.moving_duration_seconds || item.duration_seconds || 0), 0);
+  const summary = summarizeActivities(activities);
+  const { runKm: distance, runSeconds: seconds, hrSeconds, hrWeight } = summary;
   const metrics = [
     ["ДИСТАНЦИЯ", `${distance.toFixed(1)} км`],
     ["ВРЕМЯ", fmtDuration(seconds)],
-    ["СРЕДНИЙ ТЕМП", fmtPace(distance ? seconds / distance : 0)],
-    ["СРЕДНИЙ ПУЛЬС", hrTime ? `${Math.round(hrSeconds / hrTime)} bpm` : "—"],
+    ["СРЕДНИЙ ТЕМП", fmtPace(averageRunningPace(summary))],
+    ["СРЕДНИЙ ПУЛЬС", hrWeight ? `${Math.round(hrSeconds / hrWeight)} bpm` : "—"],
   ];
   return (
     <section className="day-summary min-w-0 pt-3 border-t border-[#34424a]" aria-label="Метрики выбранного дня">
