@@ -44,7 +44,12 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
   const [yearChartOpen, setYearChartOpen] = useState(initial?.yearChartOpen ?? false);
   const [expandedYear, setExpandedYear] = useState(() => initial ? initial.expandedYear : currentCalendarMonth().year);
   const [expandedMonth, setExpandedMonth] = useState(() => initial ? initial.expandedMonth : currentCalendarMonth());
-  const [selectedTypes, setSelectedTypes] = useState(["running"]);
+  const filterKey = `calendar-filters:v1:${viewScope}`;
+  const [selectedTypes, setSelectedTypes] = useState(() => readCalendarView(filterKey) ?? ["running"]);
+
+  useEffect(() => {
+    saveCalendarView(filterKey, selectedTypes);
+  }, [filterKey, selectedTypes]);
   const [selection, setSelection] = useState(() => initial?.selection ?? { type: "month", ...currentCalendarMonth() });
   const [weekJump, setWeekJump] = useState(0);
 
