@@ -12,6 +12,7 @@ from pydantic import BaseModel, EmailStr, Field
 from password_reset import RECOVERY_OWNER_EMAIL, RESET_TTL_SECONDS, reset_origin, send_reset_email
 from settings import settings
 from runner_plan import RunnerPlan
+from providers.openai import OPENAI_PRESETS
 from body_measurements import add_body_measurement_routes
 from store import RegistrationLimitReached
 from weather import add_weather_routes
@@ -137,6 +138,14 @@ def account_routes(database, verify_key):
             raise HTTPException(403, "Раздел доступен только подтверждённому администратору.")
         return email
 
+    @router.get("/admin/database-size")
+    def database_size(request: Request):
+        require_recovery_owner(request)
+        return {
+            "bytes": database.database_size_bytes(),
+            "engine": "PostgreSQL" if database.is_postgres else "SQLite",
+        }
+
     @router.get("/users")
     def list_accounts(request: Request, after: str = Query(default="", max_length=254)):
         require_recovery_owner(request)
@@ -199,13 +208,15 @@ def account_routes(database, verify_key):
     def status(request: Request):
         user_id, email = current(request)
         garmin, ai = database.keys(user_id)
-        provider, openai = database.coach_settings(user_id)
+        preset, openai = database.coach_settings(user_id)
+        provider = "openai" if preset in OPENAI_PRESETS else "gigachat"
         recovery_admin = None
         if email == RECOVERY_OWNER_EMAIL:
             recovery_admin = "active" if database.is_recovery_owner(user_id) else "verify"
         return {
             "id": user_id, "email": email, "garmin": bool(garmin), "ai": bool(openai if provider == "openai" else ai),
             "gigachat": bool(ai), "openai": bool(openai), "coach_provider": provider,
+            "coach_model_preset": preset, "gigachat_model": settings.gigachat_model,
             "recovery_admin": recovery_admin,
         }
 
@@ -229,7 +240,7 @@ def account_routes(database, verify_key):
         return body
 
     @router.put("/coach-provider")
-    def choose_coach_provider(request: Request, provider: Literal["gigachat", "openai"] = Body(embed=True)):
+    def choose_coach_provider(request: Request, provider: Literal["gigachat", "openai", "openai-light", "openai-luna"] = Body(embed=True)):
         user_id, _ = current(request)
         database.save_coach_setting(user_id, "provider", provider)
         return status(request)
@@ -248,11 +259,17 @@ def account_routes(database, verify_key):
     @router.post("/keys/{provider}/check")
     async def check(provider: Literal["garmin", "ai", "openai"], request: Request):
         user_id, _ = current(request)
-        encrypted = database.coach_settings(user_id)[1] if provider == "openai" else database.keys(user_id)[0 if provider == "garmin" else 1]
+        if provider == "openai":
+            preset, encrypted = database.coach_settings(user_id)
+        else:
+            encrypted = database.keys(user_id)[0 if provider == "garmin" else 1]
         value = decrypt(encrypted)
         if not value:
             raise HTTPException(409, "Сначала сохрани ключ.")
-        await verify_key(provider, value)
+        if provider == "openai":
+            await verify_key(provider, value, preset)
+        else:
+            await verify_key(provider, value)
         return {"ok": True}
 
     add_weather_routes(router, database, current)

@@ -8,6 +8,13 @@ import httpx
 from coach_usage import TokenUsage
 
 
+OPENAI_PRESETS = {
+    "openai": ("gpt-6.2-sol", "medium"),
+    "openai-light": ("gpt-6.2-sol", "low"),
+    "openai-luna": ("gpt-6-luna", "low"),
+}
+
+
 class OpenAIError(RuntimeError):
     def __init__(self, status_code=None):
         super().__init__("OpenAI request failed")
@@ -15,9 +22,8 @@ class OpenAIError(RuntimeError):
 
 
 class OpenAIClient:
-    model = "gpt-6.2-sol"
-
-    def __init__(self, key: str):
+    def __init__(self, key: str, preset: str = "openai"):
+        self.model, self.reasoning_effort = OPENAI_PRESETS[preset]
         self.key = key
         self.usage = TokenUsage()
         self.configured = bool(key)
@@ -51,7 +57,7 @@ class OpenAIClient:
                 if remaining <= 0:
                     raise OpenAIError()
                 body = {
-                    "model": self.model, "reasoning": {"effort": "medium"},
+                    "model": self.model, "reasoning": {"effort": self.reasoning_effort},
                     "input": items, "store": False, "include": ["reasoning.encrypted_content"],
                     "max_output_tokens": max(4096, max_tokens * 8) if finishing else max(3072, max_tokens * 6),
                 }

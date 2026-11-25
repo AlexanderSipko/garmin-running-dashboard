@@ -27,7 +27,7 @@ from coach_tools import GarminCoachTools
 from coach_analysis import analyze_period as run_period_analysis
 from dashboard_data import build_dashboard, dashboard_weekly_volume, merge_activities, monday_of, parse_date
 from providers.gigachat import GigaChatClient
-from providers.openai import OpenAIClient
+from providers.openai import OPENAI_PRESETS, OpenAIClient
 from request_security import check_origin, validation_error
 from settings import settings
 from store import Database
@@ -57,7 +57,7 @@ def update_store(update: Callable[[dict[str, Any]], None]) -> None:
 def personal_coach() -> RunningCoach:
     user_id = account_id.get()
     provider, openai_key = database.coach_settings(user_id)
-    encrypted = openai_key if provider == "openai" else database.keys(user_id)[1]
+    encrypted = openai_key if provider in OPENAI_PRESETS else database.keys(user_id)[1]
     return RunningCoach(decrypt(encrypted), provider)
 
 
@@ -125,13 +125,13 @@ async def garmin_call(method: str, *args, key: str | None = None):
         return await run_in_threadpool(call_garmin_in_process, method, key, cache_path, *args)
 
 
-async def verify_key(provider: str, key: str) -> None:
+async def verify_key(provider: str, key: str, preset: str | None = None) -> None:
     try:
         if provider == "garmin":
             today = date.today()
             await garmin_call("activities", today, today, key=key)
         elif provider == "openai":
-            await run_in_threadpool(OpenAIClient(key).check_credentials)
+            await run_in_threadpool(OpenAIClient(key, preset if preset in OPENAI_PRESETS else "openai").check_credentials)
         else:
             await run_in_threadpool(GigaChatClient(key).check_credentials)
     except Exception as exc:
@@ -535,7 +535,8 @@ def saved_daily_summary(day: date, start_date: date | None = None, end_date: dat
     saved = store.get("coach_daily", {}).get(key)
     if not saved or saved.get("context_version") != COACH_CONTEXT_VERSION or saved.get("model") != coach.model:
         return None
-    if saved.get("revision") != coach_cache_revision(store):
+    cached_preset = saved.get("model_preset", "openai" if saved["model"] == "gpt-6.2-sol" else "gigachat")
+    if cached_preset != coach.preset or saved.get("revision") != coach_cache_revision(store):
         return None
     return {key: saved[key] for key in ("answer", "model", "usage")}
 
@@ -626,7 +627,7 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
 
     analysis = None
     if activity_day and request.save_activity_analysis:
-        analysis = {"answer": result["answer"], "model": result["model"],
+        analysis = {"answer": result["answer"], "model": result["model"], "model_preset": result.get("model_preset"),
                     "created_at": datetime.now(timezone.utc).isoformat()}
 
     def save_turns(store: dict[str, Any]) -> None:

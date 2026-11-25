@@ -53,7 +53,7 @@ export default function ActivityCoachAnalysis({ activity, onReview }) {
       </div>
       {analysis && <>
         <small className="flex flex-wrap gap-x-2 text-slate-400">
-          <span>{analysis.model}</span>
+          <span>{analysis.model}{analysis.model_preset === "openai-light" ? " · Light" : analysis.model_preset === "openai" ? " · Medium" : ""}</span>
           {analysis.created_at && <time dateTime={analysis.created_at}>{dateLabel.format(new Date(analysis.created_at))}</time>}
         </small>
         <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{analysis.answer}</p>

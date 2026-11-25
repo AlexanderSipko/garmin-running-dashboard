@@ -9,7 +9,7 @@ from typing import Any
 from activity_metrics import pace_label
 from coach_tools import GarminCoachTools
 from providers.gigachat import GigaChatClient
-from providers.openai import OpenAIClient
+from providers.openai import OPENAI_PRESETS, OpenAIClient
 from runner_plan import PLAN_RULES
 
 
@@ -32,8 +32,9 @@ class RunningCoach:
     """Generate short running summaries from the user's local activity history."""
 
     def __init__(self, auth_key: str, provider: str = "gigachat") -> None:
-        self.provider = provider
-        self.client = OpenAIClient(auth_key) if provider == "openai" else GigaChatClient(auth_key)
+        self.preset = provider
+        self.provider = "openai" if provider in OPENAI_PRESETS else "gigachat"
+        self.client = OpenAIClient(auth_key, provider) if self.provider == "openai" else GigaChatClient(auth_key)
         self.enabled = bool(auth_key)
 
     @property
@@ -227,6 +228,7 @@ class RunningCoach:
         return {
             "answer": answer,
             "model": self.model,
+            "model_preset": self.preset,
             **({"training_week_proposal": tools.week_proposal} if tools and tools.week_proposal else {}),
             **({"training_session": tools.session_proposal} if tools and tools.session_proposal else {}),
             "usage": self.usage,

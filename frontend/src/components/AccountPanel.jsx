@@ -1,3 +1,4 @@
+import AdminDatabaseSize from "./AdminDatabaseSize";
 import RecoveryUsers from "./RecoveryUsers";
 import WeatherSettings from "./WeatherSettings";
 import RunnerPlanForm from "./RunnerPlanForm";
@@ -105,10 +106,12 @@ function CoachProviderSetting({ account, onChange, onPlanSaved }) {
   return (
     <>
       <label className="grid gap-1.5 rounded-2xl border border-slate-700 bg-[#1b262c] p-4 text-sm">
-        Провайдер консультанта
-        <select className={field} value={account.coach_provider || "gigachat"} disabled={busy} onChange={select}>
-          <option value="gigachat">GigaChat</option>
-          <option value="openai">OpenAI · GPT-6.2 Sol</option>
+        Модель консультанта
+        <select className={field} value={account.coach_model_preset || account.coach_provider || "gigachat"} disabled={busy} onChange={select}>
+          <option value="gigachat">Сбер · {account.gigachat_model || "GigaChat"}</option>
+          <option value="openai">OpenAI · GPT-6.2 Sol Medium</option>
+          <option value="openai-light">OpenAI · GPT-6.2 Sol Light</option>
+          <option value="openai-luna">OpenAI · GPT-6 Luna</option>
         </select>
       </label>
       {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
@@ -294,6 +297,7 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
                   {showUsers ? "Вернуться в настройки" : "Пользователи"}
                 </button>
               )}
+              {account.recovery_admin === "active" && <AdminDatabaseSize request={accountRequest} />}
               {showUsers ? <RecoveryUsers request={accountRequest} /> : (
                 <div className="grid items-start gap-4 md:grid-cols-2">
                   <section className="grid min-w-0 gap-3" aria-labelledby="connection-settings-title">

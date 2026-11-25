@@ -112,6 +112,15 @@ class Database:
                 )
             """)
 
+    def database_size_bytes(self) -> int:
+        with self.transaction() as connection:
+            if self.is_postgres:
+                size, = connection.execute("SELECT pg_database_size(current_database())").fetchone()
+                return size
+            pages, = connection.execute("PRAGMA page_count").fetchone()
+            page_size, = connection.execute("PRAGMA page_size").fetchone()
+            return pages * page_size
+
     def is_recovery_owner(self, user_id: str) -> bool:
         with self.transaction() as connection:
             row = connection.execute(
