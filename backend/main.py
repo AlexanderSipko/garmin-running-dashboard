@@ -65,6 +65,7 @@ def account_coach_tools(store: dict[str, Any]) -> GarminCoachTools:
         store,
         read_detail=lambda activity_id: database.read_activity_detail(user_id, activity_id),
         garmin_key=lambda: decrypt(database.keys(user_id)[0]),
+        read_details=lambda activity_ids: database.read_activity_details(user_id, activity_ids),
     )
 
 
@@ -673,7 +674,7 @@ def dashboard_week_zones(week_start: date) -> dict[str, Any]:
         raise HTTPException(422, "Дата начала недели должна быть понедельником.")
     user_id = account_id.get()
     result = weekly_running_zones(
-        read_store(), week_start, lambda activity_id: database.read_activity_detail(user_id, activity_id),
+        read_store(), week_start, lambda activity_ids: database.read_activity_details(user_id, activity_ids),
     )
     if result.get("missing_activity_ids") and not database.keys(user_id)[0]:
         result["missing_activity_ids"] = []
@@ -688,7 +689,7 @@ def dashboard_month_zones(month_start: date) -> dict[str, Any]:
     month_end = month_start.replace(day=monthrange(month_start.year, month_start.month)[1])
     result = running_zones_for_period(
         read_store(), month_start, month_end,
-        lambda activity_id: database.read_activity_detail(user_id, activity_id), by_day=True,
+        lambda activity_ids: database.read_activity_details(user_id, activity_ids), by_day=True,
     )
     if result.get("missing_activity_ids") and not database.keys(user_id)[0]:
         result["missing_activity_ids"] = []

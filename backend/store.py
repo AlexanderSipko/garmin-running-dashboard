@@ -318,6 +318,23 @@ class Database:
             ).fetchone()
         return json.loads(row[0]) if row else None
 
+    def read_activity_details(self, user_id: str, activity_ids: list[str]) -> dict[str, dict]:
+        if not activity_ids:
+            return {}
+        mark = self.json_parameter()
+        details = {}
+        with self.transaction() as connection:
+            for offset in range(0, len(activity_ids), 300):
+                batch = activity_ids[offset:offset + 300]
+                placeholders = ", ".join([mark] * len(batch))
+                rows = connection.execute(
+                    f"SELECT activity_id, payload FROM activity_details WHERE user_id = {mark} "
+                    f"AND activity_id IN ({placeholders})",
+                    (user_id, *batch),
+                )
+                details.update((activity_id, json.loads(payload)) for activity_id, payload in rows)
+        return details
+
     def update_activity_detail(
         self, user_id: str, activity_id: str, detail: dict, callback: Callable[[dict], None],
     ) -> dict:

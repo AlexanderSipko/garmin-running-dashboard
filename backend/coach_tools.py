@@ -25,7 +25,7 @@ from training_week import WeekPreferences, build_week_draft, change_week_distanc
 class GarminCoachTools:
     """One instance per request, scoped to the authenticated account."""
 
-    def __init__(self, store, read_detail, garmin_key):
+    def __init__(self, store, read_detail, garmin_key, read_details):
         self.session_proposal = None
         self.week_proposal = None
         self.review_only = False
@@ -129,7 +129,7 @@ class GarminCoachTools:
                 return {"error": "Укажи понедельник нужной недели."}
 
             def summarize(start: date) -> dict:
-                result = weekly_running_zones(store, start, read_detail)
+                result = weekly_running_zones(store, start, read_details)
                 result.pop("missing_activity_ids", None)
                 covered = result.get("covered_seconds", 0)
                 if covered:
@@ -140,7 +140,7 @@ class GarminCoachTools:
                 return result
 
             result = {"week": summarize(week_start)}
-            if compare_previous:
+            if compare_previous and (week_start - date.min).days >= 7:
                 result["previous_week"] = summarize(week_start - timedelta(days=7))
             return result
 

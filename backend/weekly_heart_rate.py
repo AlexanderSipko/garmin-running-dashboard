@@ -10,7 +10,7 @@ from runner_plan import plan_context
 
 
 def running_zones_for_period(
-    store: dict, start: date, end: date, read_detail: Callable[[str], dict | None], *, by_day: bool = False,
+    store: dict, start: date, end: date, read_details: Callable[[list[str]], dict[str, dict]], *, by_day: bool = False,
 ) -> dict:
     zones = plan_context(store.get("runner_plan"), date.today()).get("running_heart_rate_zones_bpm")
     if not zones:
@@ -23,10 +23,23 @@ def running_zones_for_period(
     total = empty()
     days = {}
     missing = []
-    for run in store.get("activities", []):
-        day = parse_date(run.get("start_time"))
-        if activity_kind(run) != "run" or day is None or not start <= day <= end:
+    runs = []
+    activity_ids = []
+    for activity in store.get("activities", []):
+        if activity_kind(activity) != "run":
             continue
+        day = parse_date(activity.get("start_time"))
+        if day is None or not start <= day <= end:
+            continue
+        activity_id = str(activity.get("id") or "")
+        if activity_id.isascii() and activity_id.isdecimal():
+            activity_ids.append(activity_id)
+        else:
+            activity_id = None
+        runs.append((day, activity_id))
+
+    details = read_details(activity_ids)
+    for day, activity_id in runs:
         buckets = [total]
         if by_day:
             key = day.isoformat()
@@ -36,10 +49,9 @@ def running_zones_for_period(
         for bucket in buckets:
             bucket["runs"] += 1
 
-        activity_id = str(run.get("id") or "")
-        if not activity_id.isascii() or not activity_id.isdecimal():
+        if activity_id is None:
             continue
-        detail = read_detail(activity_id)
+        detail = details.get(activity_id)
         result = running_zone_times(detail, zones)
         if result:
             for bucket in buckets:
@@ -58,6 +70,6 @@ def running_zones_for_period(
     return result
 
 
-def weekly_running_zones(store: dict, week_start: date, read_detail: Callable[[str], dict | None]) -> dict:
-    result = running_zones_for_period(store, week_start, week_start + timedelta(days=6), read_detail)
+def weekly_running_zones(store: dict, week_start: date, read_details: Callable[[list[str]], dict[str, dict]]) -> dict:
+    result = running_zones_for_period(store, week_start, week_start + timedelta(days=6), read_details)
     return {"week_start": week_start.isoformat(), **result}
