@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { readCalendarView, saveCalendarView } from "./calendarViewState";
+import CombinedYearTrends from "./CombinedYearTrends";
 import {
   Activity,
   Bike,
@@ -36,6 +39,12 @@ function CalendarPeriodExplorer({
     yearChartData, selectionLabel, selectDay, dayActivities, dayRuns, dayPlan,
   } = useCalendarPeriod({ activities, pagePath, publicDemo, plannedSessions, deloadWeeks, viewScope });
 
+  const yearChartModeKey = `calendar-year-chart-mode:v1:${viewScope}`;
+  const [combinedYear, setCombinedYear] = useState(() => readCalendarView(yearChartModeKey) === true);
+
+  useEffect(() => {
+    saveCalendarView(yearChartModeKey, combinedYear);
+  }, [yearChartModeKey, combinedYear]);
   const showCycling = selectedTypes.includes("cycling");
 
   return (
@@ -297,8 +306,17 @@ function CalendarPeriodExplorer({
                 </article>
               </div>
             )}
-            {yearChartOpen && <PeriodTrends data={yearChartData} periodLabel={`Месяцы · ${chartYear}`}
-              showRunning={showRunning} showStrength={showStrength} showCycling={showCycling} />}
+            {yearChartOpen && (
+              <>
+                <button type="button" aria-pressed={combinedYear} onClick={() => setCombinedYear(!combinedYear)}
+                  className="min-h-9 rounded-lg border border-[#536671] px-3 text-xs font-semibold text-[#ffc988] hover:bg-[#293840]">
+                  {combinedYear ? "Раздельные графики" : "Общий график"}
+                </button>
+                {combinedYear ? <CombinedYearTrends data={yearChartData} selectedTypes={selectedTypes} />
+                  : <PeriodTrends data={yearChartData} periodLabel={`Месяцы · ${chartYear}`}
+                    showRunning={showRunning} showStrength={showStrength} showCycling={showCycling} />}
+              </>
+            )}
           </div>
         </section>
 

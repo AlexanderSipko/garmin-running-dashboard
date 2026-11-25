@@ -1,4 +1,5 @@
-import { Heart, HeartPulse, Scale, Moon, Wind } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Heart, HeartPulse, Scale, Moon, Wind } from "lucide-react";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { hasMetricValue, hasWellnessForDay, localDateKey } from "../lib/wellnessDates";
 
@@ -57,7 +58,21 @@ function DayMetric({ label, icon: Icon, iconClass, value, unit, digits = 0, rule
   );
 }
 
+const wellnessListKey = "dashboard:wellness-days-collapsed";
+
 function RecentWellness({ wellness }) {
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(wellnessListKey) === "true"; }
+    catch { return false; }
+  });
+
+  function toggleDays() {
+    const next = !collapsed;
+    setCollapsed(next);
+    try { localStorage.setItem(wellnessListKey, String(next)); }
+    catch { /* Keep the preference for this visit. */ }
+  }
+
   const today = new Date();
   const hasToday = hasWellnessForDay(wellness, localDateKey(today));
   const firstDayOffset = hasToday ? 0 : 1;
@@ -138,7 +153,12 @@ function RecentWellness({ wellness }) {
         </ResponsiveContainer>
       </div>
       <div className="mb-2 flex flex-wrap gap-x-3 text-[10px] text-[color:var(--muted)]" aria-label="Легенда графика"><span className="text-[#b9a4ff]">▬ Сон, ч</span><span className="text-[#ef8490]">▬ ВЧП за 7 дней</span><span className="text-[#f3ad92]">━ ЧСС покоя</span></div>
-      <div className="grid gap-2 sm:max-[760px]:grid-cols-2">
+      <button type="button" aria-expanded={!collapsed} aria-controls="wellness-daily-cards" onClick={toggleDays}
+        className="mb-2 flex min-h-10 w-full items-center justify-between rounded-lg border border-[#3b4a50] px-3 text-left text-xs font-semibold min-[761px]:hidden">
+        {collapsed ? "Показать данные по дням" : "Свернуть данные по дням"}
+        <ChevronDown size={15} aria-hidden="true" className={collapsed ? "" : "rotate-180"} />
+      </button>
+      <div id="wellness-daily-cards" className={`grid gap-2 sm:max-[760px]:grid-cols-2 ${collapsed ? "max-[760px]:hidden" : ""}`}>
         {days.map((day) => {
           const date = localDateKey(day);
           const available = dailyMetrics.filter(({ key }) => key !== "hrv" && valuesByMetric[key].has(date));
