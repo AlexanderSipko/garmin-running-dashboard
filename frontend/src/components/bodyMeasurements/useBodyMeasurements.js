@@ -41,6 +41,7 @@ export default function useBodyMeasurements({ account, request }) {
         .sort((a, b) => b.day.localeCompare(a.day)));
       setForm(empty());
       setNotice("Запись сохранена.");
+      return true;
     } catch (error) {
       setError(error.message);
     } finally {
