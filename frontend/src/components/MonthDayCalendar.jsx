@@ -143,7 +143,7 @@ export default function MonthDayCalendar({
           const deloadAction = markedDeload ? "Снять отметку разгрузки" : "Отметить разгрузку";
 
           return <Fragment key={weekKey}>
-            <div className="@container col-span-7 mt-1 min-w-0 rounded-md border border-white/10 bg-[#ffffff06] px-2.5 py-1.5 tabular-nums">
+            <div id={`calendar-week-${weekKey}`} className="@container col-span-7 mt-1 scroll-mt-[calc(var(--app-safe-top,0px)+0.75rem)] min-w-0 rounded-md border border-white/10 bg-[#ffffff06] px-2.5 py-1.5 tabular-nums">
               <div className="flex min-h-8 items-center justify-between gap-2">
                 <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)] items-baseline gap-1 text-xs font-semibold leading-tight text-[#e5ebee] @min-[535px]:flex-initial @min-[535px]:grid-cols-[9rem_7rem_7rem] @min-[535px]:text-sm">
                   <span className="whitespace-nowrap">

@@ -32,8 +32,10 @@ function Dashboard({ demo, account, planRevision, weather, onWeatherChange, page
         "max-[420px]:pl-3 max-[420px]:pr-3",
       ].join(" ")}>
         <CalendarPeriodExplorer
+          key={pagePath}
           activities={dashboard.activities}
           pagePath={pagePath}
+          viewScope={account?.id ?? "demo"}
           onActivityUpdated={dashboard.replaceActivity}
           busy={dashboard.busy}
           error={dashboard.error}

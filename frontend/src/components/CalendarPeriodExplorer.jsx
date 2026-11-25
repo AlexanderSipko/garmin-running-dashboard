@@ -22,7 +22,7 @@ import PeriodTrends from "./PeriodTrends";
 import { monthNames, monthShortNames, useCalendarPeriod } from "./useCalendarPeriod";
 
 function CalendarPeriodExplorer({
-  activities, pagePath, busy, error, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
+  activities, pagePath, viewScope, busy, error, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
   planRevision, weather, weatherRequest, onWeatherChange, deloadWeeks, weeklyVolume, plannedSessions, onTrainingWeekChanged, onMarkDeload,
 }) {
   const {
@@ -32,8 +32,8 @@ function CalendarPeriodExplorer({
     setSelectedTypes, selection, setSelection, periodStart, periodEnd, periodActivities,
     runCount, strengthCount, totalRunKm, averageKm, averageHr, averagePace,
     showRunning, showStrength, chartYear, chartMonth, monthlySummary, monthChartData,
-    yearChartData, selectionLabel, selectDay, dayActivities, dayRuns, dayPlan,
-  } = useCalendarPeriod({ activities, pagePath, publicDemo, plannedSessions, deloadWeeks });
+    yearChartData, selectionLabel, selectDay, showCurrentWeek, dayActivities, dayRuns, dayPlan,
+  } = useCalendarPeriod({ activities, pagePath, publicDemo, plannedSessions, deloadWeeks, viewScope });
 
   return (
     <main className="period-explorer grid grid-cols-[minmax(205px,_245px)_minmax(0,_1fr)_minmax(270px,_300px)] min-h-screen max-[760px]:grid-cols-[minmax(0,_1fr)] max-[760px]:overflow-x-clip">
@@ -408,6 +408,11 @@ function CalendarPeriodExplorer({
             />
           </section>
         )}
+
+        <button type="button" onClick={showCurrentWeek}
+          className="w-fit rounded-lg border border-[#536671] px-3 py-2 text-xs font-semibold text-[#ffc988] hover:bg-[#293840]">
+          Эта неделя
+        </button>
 
         {expandedMonth?.year === expandedYear && (
           <MonthDayCalendar

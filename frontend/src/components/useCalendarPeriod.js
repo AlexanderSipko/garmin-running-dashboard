@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { currentCalendarMonth, readCalendarView, saveCalendarView, scrollToCurrentWeek } from "./calendarViewState";
 import { dayFromPath } from "../lib/dashboardRoutes";
 import { localDateKey } from "../lib/wellnessDates";
 import {
@@ -18,7 +19,7 @@ export const monthShortNames = Array.from({ length: 12 }, (_, month) =>
   new Date(2024, month, 1).toLocaleDateString("ru-RU", { month: "short" }).replace(".", "")
 );
 
-export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSessions, deloadWeeks }) {
+export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSessions, deloadWeeks, viewScope }) {
   const detailCache = useRef(new Map()).current;
   const linkedDetails = useRef(null);
   const [yearsOpen, setYearsOpen] = useState(false);
@@ -38,22 +39,58 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
     [activities]
   );
 
-  const [yearChartOpen, setYearChartOpen] = useState(true);
-  const [expandedYear, setExpandedYear] = useState(() => new Date().getFullYear());
-  const [expandedMonth, setExpandedMonth] = useState(null);
+  const storageKey = `calendar-view:v1:${viewScope}:${pagePath}`;
+  const [initial] = useState(() => readCalendarView(storageKey));
+  const [yearChartOpen, setYearChartOpen] = useState(initial?.yearChartOpen ?? false);
+  const [expandedYear, setExpandedYear] = useState(() => initial ? initial.expandedYear : currentCalendarMonth().year);
+  const [expandedMonth, setExpandedMonth] = useState(() => initial ? initial.expandedMonth : currentCalendarMonth());
   const [selectedTypes, setSelectedTypes] = useState(["running"]);
-  const [selection, setSelection] = useState(() => ({ type: "year", year: new Date().getFullYear() }));
+  const [selection, setSelection] = useState(() => initial?.selection ?? { type: "month", ...currentCalendarMonth() });
+  const [weekJump, setWeekJump] = useState(0);
+
+  function showCurrentWeek() {
+    const month = currentCalendarMonth();
+    setExpandedYear(month.year);
+    setExpandedMonth(month);
+    setSelection({ type: "month", ...month });
+    setWeekJump((count) => count + 1);
+  }
+
+  useEffect(() => {
+    const save = () => saveCalendarView(storageKey, {
+      selection, expandedYear, expandedMonth, yearChartOpen, scrollY: window.scrollY,
+    });
+    window.addEventListener("pagehide", save);
+    return () => window.removeEventListener("pagehide", save);
+  }, [storageKey, selection, expandedYear, expandedMonth, yearChartOpen]);
+
+  useEffect(() => {
+    if (!weekJump && dayFromPath(pagePath)) return;
+    const frame = requestAnimationFrame(() => {
+      if (!weekJump && Number.isFinite(initial?.scrollY)) {
+        window.scrollTo(0, initial.scrollY);
+      } else {
+        scrollToCurrentWeek();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initial, pagePath, weekJump]);
 
   useEffect(() => {
     const linkedDay = dayFromPath(pagePath);
     if (!linkedDay) return undefined;
     const { year, month } = linkedDay;
-    setExpandedYear(year);
-    setExpandedMonth({ year, month });
-    setSelection({ type: "day", ...linkedDay });
-    const frame = requestAnimationFrame(() => linkedDetails.current?.scrollIntoView({ block: "start" }));
+    if (!initial) {
+      setExpandedYear(year);
+      setExpandedMonth({ year, month });
+      setSelection({ type: "day", ...linkedDay });
+    }
+    const frame = requestAnimationFrame(() => {
+      if (Number.isFinite(initial?.scrollY)) window.scrollTo(0, initial.scrollY);
+      else linkedDetails.current?.scrollIntoView({ block: "start" });
+    });
     return () => cancelAnimationFrame(frame);
-  }, [pagePath]);
+  }, [initial, pagePath]);
 
   const { periodStart, periodEnd } = useMemo(() => {
     const start = selection.type === "year"
@@ -186,6 +223,7 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
     yearChartData,
     selectionLabel,
     selectDay,
+    showCurrentWeek,
     dayActivities,
     dayRuns,
     dayPlan,
