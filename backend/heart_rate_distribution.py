@@ -20,7 +20,7 @@ def running_zone_times(detail, zones):
     if not detail or not zones:
         return None
     histogram = detail.get("heart_rate_seconds_by_bpm")
-    source = "fit_samples"
+    source = detail.get("heart_rate_source", "fit_samples")
     if histogram is None:
         histogram = seconds_by_bpm(detail.get("points") or [])
         source = "sampled_fit_estimate"

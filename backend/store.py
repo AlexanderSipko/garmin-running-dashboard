@@ -9,6 +9,11 @@ import threading
 from contextlib import contextmanager, closing
 from pathlib import Path
 from typing import Callable
+from datetime import date
+from time import time
+
+from activity_retention import TRACK_FIELDS, archive_expired_track, retention_cutoff, stamp_fresh_track
+from dashboard_data import parse_date
 
 
 MAX_USERS = 3
@@ -335,6 +340,40 @@ class Database:
                 details.update((activity_id, json.loads(payload)) for activity_id, payload in rows)
         return details
 
+    def prune_old_activity_tracks(self, user_id: str, today: date) -> None:
+        day_key = today.isoformat()
+        cutoff = retention_cutoff(today)
+        mark = self.json_parameter()
+
+        with self.transaction() as connection:
+            def prune(store):
+                if store.get("activity_tracks_pruned_on") == day_key:
+                    return
+                old_ids = [
+                    str(row["id"]) for row in store.get("activities", [])
+                    if row.get("id") and (day := parse_date(row.get("start_time"))) and day < cutoff
+                ]
+                now = time()
+                for offset in range(0, len(old_ids), 300):
+                    batch = old_ids[offset:offset + 300]
+                    placeholders = ", ".join([mark] * len(batch))
+                    rows = connection.execute(
+                        f"SELECT activity_id, payload FROM activity_details WHERE user_id = {mark} "
+                        f"AND activity_id IN ({placeholders})",
+                        (user_id, *batch),
+                    ).fetchall()
+                    for activity_id, payload in rows:
+                        detail = json.loads(payload)
+                        archived = archive_expired_track(detail, now)
+                        if archived is not detail:
+                            connection.execute(
+                                f"UPDATE activity_details SET payload = {mark} WHERE user_id = {mark} AND activity_id = {mark}",
+                                (json.dumps(archived, ensure_ascii=False), user_id, activity_id),
+                            )
+                store["activity_tracks_pruned_on"] = day_key
+
+            self._update_user_data(connection, user_id, prune)
+
     def update_activity_detail(
         self, user_id: str, activity_id: str, detail: dict, callback: Callable[[dict], None],
     ) -> dict:
@@ -343,18 +382,25 @@ class Database:
         track_failed = detail.pop("track_refresh_failed", False)
         with self.transaction() as connection:
             self._update_user_data(connection, user_id, callback)
-            if track_failed:
+            if track_failed or not detail.get("heart_rate_seconds_by_bpm"):
                 row = connection.execute(
                     f"SELECT payload FROM activity_details WHERE user_id = {mark} AND activity_id = {mark}",
                     (user_id, activity_id),
                 ).fetchone()
                 previous = json.loads(row[0]) if row else {}
-                detail.pop("heart_rate_seconds_by_bpm", None)
-                if previous.get("points") or previous.get("route"):
-                    for field in ("points", "route", "sample_count", "track_available", "heart_rate_seconds_by_bpm"):
+                if track_failed:
+                    detail.pop("heart_rate_seconds_by_bpm", None)
+                    for field in (*TRACK_FIELDS, "track_cached_at", "track_archived"):
                         if field in previous:
                             detail[field] = previous[field]
-                    detail["track_message"] = "Не удалось обновить трек. Показана сохранённая запись."
+                    if previous.get("points") or previous.get("route"):
+                        detail["track_message"] = "Не удалось обновить трек. Показана сохранённая запись."
+                if previous.get("heart_rate_seconds_by_bpm") and not detail.get("heart_rate_seconds_by_bpm"):
+                    detail["heart_rate_seconds_by_bpm"] = previous["heart_rate_seconds_by_bpm"]
+                    if "heart_rate_source" in previous:
+                        detail["heart_rate_source"] = previous["heart_rate_source"]
+            if not track_failed:
+                stamp_fresh_track(detail, time())
             connection.execute(
                 f"INSERT INTO activity_details (user_id, activity_id, payload) VALUES ({mark}, {mark}, {mark}) "
                 "ON CONFLICT (user_id, activity_id) DO UPDATE SET payload = excluded.payload",

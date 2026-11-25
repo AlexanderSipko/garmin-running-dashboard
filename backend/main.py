@@ -5,6 +5,7 @@ from calendar import monthrange
 from contextvars import ContextVar
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import time
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from typing import Any, Callable
@@ -14,6 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
+from activity_retention import archive_expired_track, retention_cutoff
 from accounts import account_routes, decrypt
 from coach import RunningCoach
 from weekly_heart_rate import running_zones_for_period, weekly_running_zones
@@ -70,8 +72,16 @@ def account_coach_tools(store: dict[str, Any]) -> GarminCoachTools:
 
 
 def account_dashboard(days: int) -> dict[str, Any]:
-    configured = bool(database.keys(account_id.get())[0])
-    return build_dashboard(days, read_store(), configured=configured)
+    user_id = account_id.get()
+    configured = bool(database.keys(user_id)[0])
+    store = read_store()
+    today = date.today()
+    if store.get("activity_tracks_pruned_on") != today.isoformat():
+        try:
+            database.prune_old_activity_tracks(user_id, today)
+        except Exception:
+            logger.exception("Unable to prune expired Garmin track cache")
+    return build_dashboard(days, store, configured=configured)
 
 
 def call_garmin_in_process(method: str, key: str, cache_path: Path, *args):
@@ -783,12 +793,16 @@ async def activity_detail(
     user_id = account_id.get()
     if request.method == "GET" or only_if_missing:
         saved = await run_in_threadpool(database.read_activity_detail, user_id, activity_key)
-        if request.method == "GET" or saved is not None:
+        activity_day = parse_date(known_activity.get("start_time"))
+        if saved and activity_day and activity_day < retention_cutoff(date.today()):
+            saved = archive_expired_track(saved, time())
+        details_saved = saved is not None and not saved.get("track_archived", False)
+        if request.method == "GET" or details_saved:
             return {
                 **(saved or {}),
                 "activity_id": activity_id,
                 "description": known_activity.get("description"),
-                "details_saved": saved is not None,
+                "details_saved": details_saved,
             }
 
     try:
@@ -831,10 +845,13 @@ async def activity_detail(
     except Exception as exc:
         logger.error("Activity refresh could not write to the database: %s", type(exc).__name__)
         raise HTTPException(503, "Не удалось сохранить обновлённую тренировку. Попробуй ещё раз.") from None
+    activity_day = parse_date(updated_activity.get("start_time"))
+    if activity_day and activity_day < retention_cutoff(date.today()):
+        detail = archive_expired_track(detail, time())
     return {
         "activity_id": activity_id,
         **detail,
-        "details_saved": True,
+        "details_saved": not detail.get("track_archived", False),
         "activity": updated_activity,
         "description": updated_activity.get("description"),
         "weekly_volume": weekly_volume,
