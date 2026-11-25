@@ -1,5 +1,6 @@
 import {
   Activity,
+  Bike,
   ChevronDown,
   Dumbbell,
   Footprints,
@@ -30,10 +31,12 @@ function CalendarPeriodExplorer({
     daySummaries, monthSummaries, yearSummaries, yearChartOpen, setYearChartOpen,
     expandedYear, setExpandedYear, expandedMonth, setExpandedMonth, selectedTypes,
     setSelectedTypes, selection, setSelection, periodStart, periodEnd, periodActivities,
-    runCount, strengthCount, totalRunKm, averageKm, averageHr, averagePace,
+    runCount, strengthCount, cyclingCount, cyclingKm, totalRunKm, averageKm, averageHr, averagePace,
     showRunning, showStrength, chartYear, chartMonth, monthlySummary, monthChartData,
-    yearChartData, selectionLabel, selectDay, showCurrentWeek, dayActivities, dayRuns, dayPlan,
+    yearChartData, selectionLabel, selectDay, dayActivities, dayRuns, dayPlan,
   } = useCalendarPeriod({ activities, pagePath, publicDemo, plannedSessions, deloadWeeks, viewScope });
+
+  const showCycling = selectedTypes.includes("cycling");
 
   return (
     <main className="period-explorer grid grid-cols-[minmax(205px,_245px)_minmax(0,_1fr)_minmax(270px,_300px)] min-h-screen max-[760px]:grid-cols-[minmax(0,_1fr)] max-[760px]:overflow-x-clip">
@@ -79,6 +82,9 @@ function CalendarPeriodExplorer({
                     
                   
                   </span>
+                  {summary.cyclingCount > 0 && <span className="flex items-center justify-center gap-1 text-xs font-bold text-[#8de0cc]" title="Дистанция на велосипеде">
+                    <Bike size={14} aria-hidden="true" />{summary.cyclingKm.toFixed(1)} км
+                  </span>}
                   <span className="period-year-stats grid items-center p-0 z-[1]">
                     <span className={[
                       "period-year-metric pulse flex items-center justify-center gap-[3px] min-w-0 p-[2px]",
@@ -146,21 +152,24 @@ function CalendarPeriodExplorer({
       </aside>
 
       <section className="period-explorer-summary flex flex-col gap-[18px] min-w-0 bg-[radial-gradient(ellipse_at_top,_#344a3e33,_transparent_55%),linear-gradient(180deg,_#1b252b,_var(--bg)_42rem)] py-6 px-[clamp(18px,2vw,34px)] [&_>_div_+_div]:mt-0 max-[760px]:p-3">
-        <header className={[
-          "period-summary-heading flex items-center justify-between gap-[14px]",
-          "[&_>_div:first-child_>_span]:text-[color:#9ba9ae] [&_>_div:first-child_>_span]:text-[9px]",
-          "[&_>_div:first-child_>_span]:font-bold [&_>_div:first-child_>_span]:tracking-[.14em] [&_h1]:mt-1",
-          "mx-0 mb-0 [&_h1]:text-[color:#e7edf0] [&_h1]:font-display [&_h1]:text-[24px] [&_h1]:leading-[1.15]",
-          "max-[420px]:[&_h1]:text-[19px]",
-        ].join(" ")}>
-          <div>
-            <span>СВОДКА ПЕРИОДА</span>
-            <h1>{selectionLabel}</h1>
+        <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+            {!publicDemo && <WeatherPanel weather={weather} request={weatherRequest} onChange={onWeatherChange} />}
+            {coachEnabled && <RunningCoachPanel
+              key={planRevision}
+              period={selection.type}
+              periodStart={periodStart}
+              periodEnd={periodEnd}
+              label={selectionLabel}
+              syncedAt={syncedAt}
+              onTrainingWeekChanged={onTrainingWeekChanged}
+            />}
           </div>
-          <div className="period-type-filters grid grid-cols-[repeat(2,_32px)] [justify-content:start] items-center gap-[7px] mb-5 [.period-summary-heading_&]:flex [.period-summary-heading_&]:gap-[7px] [.period-summary-heading_&]:m-0" aria-label="Типы тренировок">
+          <div className="period-type-filters flex shrink-0 flex-wrap items-center gap-1.5" aria-label="Типы тренировок">
             {[
               { id: "running", label: "Бег", icon: Footprints },
               { id: "strength", label: "Силовые тренировки", icon: Dumbbell },
+              { id: "cycling", label: "Велосипед", icon: Bike },
             ].map((type) => (
               <button
                 type="button"
@@ -180,119 +189,116 @@ function CalendarPeriodExplorer({
             ))}
           </div>
         </header>
-        {!publicDemo && <WeatherPanel weather={weather} request={weatherRequest} onChange={onWeatherChange} />}
-        {coachEnabled && <RunningCoachPanel
-          key={planRevision}
-          period={selection.type}
-          periodStart={periodStart}
-          periodEnd={periodEnd}
-          label={selectionLabel}
-          syncedAt={syncedAt}
-          onTrainingWeekChanged={onTrainingWeekChanged}
-        />}
 
-        <div className="period-summary-metrics grid grid-cols-[repeat(auto-fit,_minmax(112px,_1fr))] gap-[9px] max-[420px]:grid-cols-[repeat(2,_minmax(0,_1fr))]">
-          <article className={[
-            "period-summary-metric run-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
-            "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
-            "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
-            "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
-            "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
-            "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
-            "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
-            "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
-            "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
-            "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
-            "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
-            "[&_>_span_svg]:text-[color:#efa85f] max-[420px]:min-h-[68px]",
-          ].join(" ")}>
-            <span><Footprints />Дистанция</span>
-            <b>{totalRunKm.toFixed(1)}<small>км</small></b>
-          </article>
-          <article className={[
-            "period-summary-metric pace-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
-            "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
-            "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
-            "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
-            "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
-            "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
-            "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
-            "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
-            "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
-            "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
-            "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
-            "[&_>_span_svg]:text-[color:#90a9ff] max-[420px]:min-h-[68px]",
-          ].join(" ")}>
-            <span><Gauge />Средний темп</span>
-            <b>{fmtPace(averagePace)}<small>/км</small></b>
-          </article>
-          <article className={[
-            "period-summary-metric hr-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
-            "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
-            "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
-            "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
-            "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
-            "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
-            "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
-            "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
-            "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
-            "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
-            "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
-            "[&_>_span_svg]:text-[color:#f18491] max-[420px]:min-h-[68px]",
-          ].join(" ")}>
-            <span><HeartPulse />Средний пульс</span>
-            <b>{averageHr || "—"}<small>bpm</small></b>
-          </article>
-          <article className={[
-            "period-summary-metric workout-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
-            "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
-            "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
-            "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
-            "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
-            "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
-            "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
-            "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
-            "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
-            "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
-            "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
-            "[&_>_span_svg]:text-[color:#b1beff] max-[420px]:min-h-[68px]",
-          ].join(" ")}>
-            <span><Dumbbell />Тренировки</span>
-            <b>{runCount + strengthCount}</b>
-            <small>{runCount} бег · {strengthCount} зал</small>
-          </article>
-          <article className={[
-            "period-summary-metric average-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
-            "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
-            "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
-            "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
-            "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
-            "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
-            "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
-            "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
-            "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
-            "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
-            "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
-            "[&_>_span_svg]:text-[color:#e9bd79] max-[420px]:min-h-[68px]",
-          ].join(" ")}>
-            <span><Activity />Среднее за бег</span>
-            <b>{runCount ? averageKm.toFixed(1) : "—"}<small>км</small></b>
-          </article>
-        </div>
-
-        <section className="min-w-0 rounded-xl border border-[#34424a] bg-[#1b252b] p-3">
-          <button type="button" aria-expanded={yearChartOpen} aria-controls="year-trends"
-            onClick={() => setYearChartOpen(!yearChartOpen)}
-            className="flex min-h-10 w-full items-center justify-between gap-2 text-left text-sm font-semibold">
-            <span>Годовая динамика · {chartYear}</span>
-            <span className="inline-flex items-center gap-1 text-xs text-[#aebbc0]">
-              {yearChartOpen ? "Свернуть" : "Развернуть"}
-              <ChevronDown size={16} aria-hidden="true" className={yearChartOpen ? "rotate-180" : undefined} />
-            </span>
-          </button>
-          <div id="year-trends" hidden={!yearChartOpen}>
+        <section className="min-w-0 rounded-xl border border-[#34424a] bg-[#1b252b] px-3 py-1.5">
+          <h1>
+            <button type="button" aria-expanded={yearChartOpen} aria-controls="year-trends"
+              onClick={() => setYearChartOpen(!yearChartOpen)}
+              className="flex min-h-10 w-full items-center justify-between gap-2 text-left text-sm font-semibold">
+              <span className="text-base font-bold">{chartYear} год</span>
+              <span className="inline-flex items-center gap-1 text-xs text-[#aebbc0]">
+                {yearChartOpen ? "Свернуть" : "Развернуть"}
+                <ChevronDown size={16} aria-hidden="true" className={yearChartOpen ? "rotate-180" : undefined} />
+              </span>
+            </button>
+          </h1>
+          <div id="year-trends" hidden={!yearChartOpen} className="space-y-3 pb-2 pt-2">
+            {yearChartOpen && (
+              <div className="period-summary-metrics grid grid-cols-[repeat(auto-fit,_minmax(112px,_1fr))] gap-[9px] max-[420px]:grid-cols-[repeat(2,_minmax(0,_1fr))]">
+                <article className={[
+                  "period-summary-metric run-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
+                  "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
+                  "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
+                  "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
+                  "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
+                  "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
+                  "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
+                  "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
+                  "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
+                  "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
+                  "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
+                  "[&_>_span_svg]:text-[color:#efa85f] max-[420px]:min-h-[68px]",
+                ].join(" ")}>
+                  <span><Footprints />Дистанция</span>
+                  <b>{totalRunKm.toFixed(1)}<small>км</small></b>
+                </article>
+                <article className={[
+                  "period-summary-metric pace-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
+                  "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
+                  "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
+                  "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
+                  "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
+                  "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
+                  "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
+                  "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
+                  "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
+                  "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
+                  "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
+                  "[&_>_span_svg]:text-[color:#90a9ff] max-[420px]:min-h-[68px]",
+                ].join(" ")}>
+                  <span><Gauge />Средний темп</span>
+                  <b>{fmtPace(averagePace)}<small>/км</small></b>
+                </article>
+                <article className={[
+                  "period-summary-metric hr-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
+                  "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
+                  "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
+                  "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
+                  "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
+                  "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
+                  "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
+                  "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
+                  "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
+                  "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
+                  "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
+                  "[&_>_span_svg]:text-[color:#f18491] max-[420px]:min-h-[68px]",
+                ].join(" ")}>
+                  <span><HeartPulse />Средний пульс</span>
+                  <b>{averageHr || "—"}<small>bpm</small></b>
+                </article>
+                <article className={[
+                  "period-summary-metric workout-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
+                  "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
+                  "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
+                  "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
+                  "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
+                  "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
+                  "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
+                  "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
+                  "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
+                  "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
+                  "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
+                  "[&_>_span_svg]:text-[color:#b1beff] max-[420px]:min-h-[68px]",
+                ].join(" ")}>
+                  <span><Dumbbell />Тренировки</span>
+                  <b>{runCount + strengthCount + cyclingCount}</b>
+                  <small>{runCount} бег · {strengthCount} зал{showCycling && ` · ${cyclingCount} вело`}</small>
+                </article>
+                {showCycling && <article className="grid rounded-xl border border-[#34424a] bg-[#202a30] p-2.5 text-[#8de0cc]">
+                  <span className="flex items-center gap-1 text-xs"><Bike size={14} />Велосипед</span>
+                  <b>{cyclingKm.toFixed(1)} км</b>
+                </article>}
+                <article className={[
+                  "period-summary-metric average-summary flex flex-col justify-between min-w-0 min-h-[76px] pt-[10px]",
+                  "px-[9px] pb-2 [border:1px_solid_#34424a] rounded-[12px]",
+                  "[background:linear-gradient(145deg,_#202a30,_#192228_80%)] [&_>_span]:flex [&_>_span]:items-center",
+                  "[&_>_span]:gap-[5px] [&_>_span]:overflow-hidden [&_>_span]:text-[color:#aab6bb]",
+                  "[&_>_span]:text-[9px] [&_>_span]:text-[ellipsis] [&_>_span]:whitespace-nowrap",
+                  "[&_>_span_svg]:w-[13px] [&_>_span_svg]:h-[13px] [&_>_span_svg]:[flex:0_0_auto]",
+                  "[&_>_b]:overflow-hidden [&_>_b]:text-[color:#e5ebee] [&_>_b]:font-display [&_>_b]:text-[19px]",
+                  "[&_>_b]:font-[750] [&_>_b]:tracking-[-.04em] [&_>_b]:leading-none [&_>_b]:text-[ellipsis]",
+                  "[&_>_b]:whitespace-nowrap [&_>_b_small]:ml-[3px] [&_>_b_small]:text-[color:#98a5ab]",
+                  "[&_>_b_small]:text-[9px] [&_>_b_small]:font-medium [&_>_b_small]:tracking-[0]",
+                  "[&_>_small]:text-[color:#98a5ab] [&_>_small]:text-[8px] [&_>_small]:leading-[1.15]",
+                  "[&_>_span_svg]:text-[color:#e9bd79] max-[420px]:min-h-[68px]",
+                ].join(" ")}>
+                  <span><Activity />Среднее за бег</span>
+                  <b>{runCount ? averageKm.toFixed(1) : "—"}<small>км</small></b>
+                </article>
+              </div>
+            )}
             {yearChartOpen && <PeriodTrends data={yearChartData} periodLabel={`Месяцы · ${chartYear}`}
-              showRunning={showRunning} showStrength={showStrength} />}
+              showRunning={showRunning} showStrength={showStrength} showCycling={showCycling} />}
           </div>
         </section>
 
@@ -317,7 +323,7 @@ function CalendarPeriodExplorer({
                 || (expandedYear === currentDate.getFullYear() && month > currentDate.getMonth()));
               const summary = monthSummaries.get(`${expandedYear}-${month}`) || emptySummary();
               const showRunning = selectedTypes.includes("running");
-              const showStrength = !showRunning && selectedTypes.includes("strength");
+              const showStrength = selectedTypes.includes("strength");
               const monthSelected = selection.year === expandedYear
                 && selection.month === month
                 && selection.type !== "year";
@@ -334,7 +340,7 @@ function CalendarPeriodExplorer({
                   type="button"
                   key={monthName}
                   disabled={monthLocked}
-                  aria-label={monthLabel}
+                  aria-label={[monthLabel, showRunning && showStrength && `${summary.strengthCount} силовых тренировок`, showCycling && `велосипед ${summary.cyclingKm.toFixed(1)} км`].filter(Boolean).join(", ")}
                   aria-pressed={monthSelected}
                   aria-disabled={monthLocked}
                   title={monthLabel}
@@ -350,6 +356,12 @@ function CalendarPeriodExplorer({
                   <span aria-hidden="true" className="pointer-events-none absolute right-1.5 top-1 bg-gradient-to-br from-[#d4dde1]/80 to-[#d4dde1]/20 bg-clip-text text-[14px] font-bold capitalize leading-none text-transparent">
                     {monthShortNames[month]}
                   </span>
+                  {(showCycling && summary.cyclingCount > 0 || showRunning && showStrength && summary.strengthCount > 0) && (
+                    <span className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[11px] font-bold tabular-nums">
+                      {showCycling && summary.cyclingCount > 0 && <span className="inline-flex items-center gap-1 whitespace-nowrap text-[#8de0cc]"><Bike size={12} aria-hidden="true" />{summary.cyclingKm.toFixed(1)} км</span>}
+                      {showRunning && showStrength && summary.strengthCount > 0 && <span className="inline-flex items-center gap-1 text-[#b6c2ff]"><Dumbbell size={12} aria-hidden="true" />{summary.strengthCount}</span>}
+                    </span>
+                  )}
                   {showRunning ? (
                     <span className="z-[1] grid w-full min-w-0 gap-1.5 tabular-nums">
                       <span className="flex items-baseline justify-center gap-1 whitespace-nowrap text-[#ffc17f]">
@@ -378,7 +390,7 @@ function CalendarPeriodExplorer({
                     ].join(" ")}>
                       <span><Dumbbell /><b>{summary.strengthCount}</b></span>
                     </span>
-                  ) : (
+                  ) : showCycling && summary.cyclingCount > 0 ? null : (
                     <span className={[
                       "period-month-metrics grid w-full gap-[2px] z-[1] [&_>_span]:flex [&_>_span]:items-center",
                       "[&_>_span]:justify-center [&_>_span]:gap-[3px] [&_>_span]:min-w-0 [&_>_span]:text-[color:#dce4e8]",
@@ -398,21 +410,17 @@ function CalendarPeriodExplorer({
           <section className="min-w-0" aria-label="График выбранного месяца">
             <h2 className="mb-2 text-sm font-bold capitalize">{monthNames[chartMonth]} · {chartYear}</h2>
             <PeriodTrends data={monthChartData} periodLabel={`Дни · ${monthNames[chartMonth]} ${chartYear}`}
-              showRunning={showRunning} showStrength={showStrength}
+              showRunning={showRunning} showStrength={showStrength} showCycling={showCycling}
               periodSummary={{
                 distanceKm: monthlySummary?.runKm || 0,
                 pace: averageRunningPace(monthlySummary),
                 heartRate: monthlySummary?.hrWeight ? Math.round(monthlySummary.hrSeconds / monthlySummary.hrWeight) : null,
+                cyclingKm: monthlySummary?.cyclingKm || 0,
                 strengthCount: monthlySummary?.strengthCount || 0,
               }}
             />
           </section>
         )}
-
-        <button type="button" onClick={showCurrentWeek}
-          className="w-fit rounded-lg border border-[#536671] px-3 py-2 text-xs font-semibold text-[#ffc988] hover:bg-[#293840]">
-          Эта неделя
-        </button>
 
         {expandedMonth?.year === expandedYear && (
           <MonthDayCalendar

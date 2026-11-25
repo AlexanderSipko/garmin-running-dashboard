@@ -1,4 +1,4 @@
-import { Dumbbell, Footprints, Gauge, HeartPulse } from "lucide-react";
+import { Bike, Dumbbell, Footprints, Gauge, HeartPulse } from "lucide-react";
 import {
   Area,
   Bar,
@@ -26,7 +26,7 @@ function formatMetric(key, value) {
   return `${Math.round(value)} bpm`;
 }
 
-function CombinedTooltip({ active, label, payload, showRunning, showStrength }) {
+function CombinedTooltip({ active, label, payload, showRunning, showStrength, showCycling }) {
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload;
   if (!point) return null;
@@ -41,6 +41,7 @@ function CombinedTooltip({ active, label, payload, showRunning, showStrength }) 
           {metric.label}: {formatMetric(metric.key, point[metric.key])}
         </span>
       ))}
+      {showCycling && point.cyclingKm != null && <div className="text-[#8de0cc]">Велосипед: {point.cyclingKm.toFixed(1)} км</div>}
       {showStrength && point.strengthCount != null && (
         <span className="combined-tooltip-row flex items-center gap-[6px] [&_i]:w-[7px] [&_i]:h-[7px] [&_i]:rounded-[50%]">
           <i className="h-[7px] w-[7px] rounded-full bg-[#a7b5ff]" />
@@ -68,47 +69,41 @@ function MetricLegend({ data, metric }) {
   );
 }
 
-function StrengthTooltip({ active, label, payload }) {
-  const count = payload?.[0]?.value;
-  if (!active || count == null) return null;
-
-  return (
-    <div className="rounded-lg border border-[#46545b] bg-[#202a30f2] p-2.5 text-[11px] text-[#dce5e9]">
-      <div>{label}</div>
-      <div>Силовые: {count} занятий</div>
-    </div>
-  );
-}
-
-function TrendCard({ data }) {
-  const latest = [...data].reverse().find((point) => point.strengthCount != null);
+function TrendCard({ data, cycling = false }) {
+  const dataKey = cycling ? "cyclingKm" : "strengthCount";
+  const label = cycling ? "Велосипед" : "Силовые тренировки";
+  const color = cycling ? "#8de0cc" : "#a7b5ff";
+  const Icon = cycling ? Bike : Dumbbell;
+  const total = data.reduce((sum, point) => sum + (point[dataKey] ?? 0), 0);
+  const formatValue = (value) => cycling ? `${Number(value).toFixed(1)} км` : String(value);
 
   return (
     <article className={[
-      "period-trend-card trend-strengthCount min-w-0 pt-[10px] px-[9px] pb-1 [border:1px_solid_#303e45]",
+      "period-trend-card min-w-0 pt-[10px] px-[9px] pb-1 [border:1px_solid_#303e45]",
       "rounded-[13px] [background:linear-gradient(155deg,_#1c262c,_#171f24_90%)] [&_>_header]:flex",
       "[&_>_header]:items-center [&_>_header]:gap-[5px] [&_>_header]:min-w-0",
       "[&_>_header]:text-[color:#adb9be] [&_>_header]:text-[9px] [&_>_header]:whitespace-nowrap",
       "[&_>_header_>_span]:overflow-hidden [&_>_header_>_span]:text-[ellipsis] [&_>_header_>_b]:ml-auto",
       "[&_>_header_>_b]:text-[color:#e5ebee] [&_>_header_>_b]:text-[10px] [&_>_header_>_b]:font-bold",
-      "[&_>_header_svg]:text-[color:#a7b5ff]",
     ].join(" ")}>
       <header>
-        <Dumbbell size={15} aria-hidden="true" />
-        <span>Силовые тренировки</span>
-        <b>{latest?.strengthCount ?? 0}</b>
+        <Icon size={15} color={color} aria-hidden="true" />
+        <span>{label}</span>
+        <b>{formatValue(total)}</b>
       </header>
       <div className="period-trend-chart [.combined-running-chart_&]:h-[230px] [.combined-running-chart_&]:mt-[3px] w-full h-[120px] mt-1 max-[420px]:h-[110px] max-[420px]:[.combined-running-chart_&]:h-[185px]">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 10, right: 4, left: 4, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="#ffffff10" />
             <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: "#8f9ea5", fontSize: 13 }} tickMargin={8} />
-            <YAxis hide allowDecimals={false} />
+            <YAxis hide allowDecimals={cycling} />
             <Tooltip
               cursor={{ stroke: "#ffffff35", strokeDasharray: "3 3" }}
-              content={<StrengthTooltip />}
+              formatter={(value) => [formatValue(value), label]}
+              contentStyle={{ background: "#1b252b", borderColor: "#36464d", borderRadius: 8 }}
+              labelStyle={{ color: "#e5ebee" }}
             />
-            <Area type="monotone" dataKey="strengthCount" stroke="#a7b5ff" strokeWidth={2} fill="#a7b5ff" fillOpacity={0.12} connectNulls={false} isAnimationActive={false} />
+            <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} fill={color} fillOpacity={0.12} connectNulls={false} isAnimationActive={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -136,11 +131,12 @@ function MonthAxisTick({ x, y, payload, days }) {
   );
 }
 
-function PeriodTrends({ data, periodLabel, showRunning, showStrength, periodSummary }) {
+function PeriodTrends({ data, periodLabel, showRunning, showStrength, showCycling, periodSummary }) {
   const isDailyChart = periodLabel.startsWith("Дни ·");
   const days = isDailyChart ? new Map(data.map((point) => [point.label, point])) : null;
   const showStrengthBars = showStrength && isDailyChart;
-  const showCombinedChart = showRunning || showStrengthBars;
+  const showCyclingBars = showCycling && isDailyChart;
+  const showCombinedChart = showRunning || showStrengthBars || showCyclingBars;
   const monthMetrics = [];
   const deloadRanges = new Map();
   if (isDailyChart) {
@@ -160,6 +156,7 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, periodSumm
         ["Средний пульс", periodSummary.heartRate == null ? "—" : `${periodSummary.heartRate} bpm`],
       );
     }
+    if (showCycling) monthMetrics.push(["Велосипед за месяц", `${periodSummary.cyclingKm.toFixed(1)} км`]);
     if (showStrength) monthMetrics.push(["Силовые", String(periodSummary.strengthCount)]);
   }
 
@@ -186,16 +183,17 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, periodSumm
                 <YAxis yAxisId="distance" hide domain={[0, "dataMax + 2"]} />
                 <YAxis yAxisId="pace" hide orientation="right" reversed domain={["dataMin - 30", "dataMax + 30"]} />
                 <YAxis yAxisId="heart" hide orientation="right" domain={["dataMin - 8", "dataMax + 8"]} />
-                <Tooltip content={<CombinedTooltip showRunning={showRunning} showStrength={showStrengthBars} />} cursor={{ stroke: "#ffffff35", strokeDasharray: "3 3" }} />
+                <Tooltip content={<CombinedTooltip showRunning={showRunning} showStrength={showStrengthBars} showCycling={showCyclingBars} />} cursor={{ stroke: "#ffffff35", strokeDasharray: "3 3" }} />
                 {showStrengthBars && <YAxis yAxisId="strength" hide orientation="right" allowDecimals={false} domain={[0, "dataMax + 1"]} />}
                 {[...deloadRanges].map(([week, range]) => (
                   <ReferenceArea key={week} x1={range.start} x2={range.end}
-                    yAxisId={showRunning ? "distance" : "strength"} ifOverflow="visible"
+                    yAxisId={showRunning || showCyclingBars ? "distance" : "strength"} ifOverflow="visible"
                     fill="#72c8b3" fillOpacity={0.16} strokeOpacity={0} />
                 ))}
                 {showRunning && (isDailyChart
                   ? <Bar yAxisId="distance" dataKey="runKm" name="Бег, км" fill="#efa85f" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />
                   : <Area yAxisId="distance" type="monotone" dataKey="runKm" name="Дистанция" stroke="#efa85f" strokeWidth={2.5} fill="url(#combined-fill-runKm)" connectNulls={false} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} isAnimationActive={false} />)}
+                {showCyclingBars && <Bar yAxisId="distance" dataKey="cyclingKm" name="Велосипед, км" fill="#8de0cc" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />}
                 {showStrengthBars && <Bar yAxisId="strength" dataKey="strengthCount" name="Силовые" fill="#91a6ff" radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false} />}
                 {showRunning && !isDailyChart && <Line yAxisId="pace" type="monotone" dataKey="pace" name="Темп" stroke="#90a9ff" strokeWidth={2.5} connectNulls={false} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} isAnimationActive={false} />}
                 {showRunning && !isDailyChart && <Line yAxisId="heart" type="monotone" dataKey="avgHr" name="Пульс" stroke="#f18491" strokeWidth={2.5} connectNulls={false} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} isAnimationActive={false} />}
@@ -222,8 +220,9 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, periodSumm
       )}
 
       {showStrength && !isDailyChart && data.length > 0 && <TrendCard data={data} />}
-      {!showRunning && !showStrength && (
-        <p className="period-trends-empty m-0 text-[color:var(--muted)] text-[12px]">Включи бег или силовые, чтобы увидеть динамику.</p>
+      {showCycling && !isDailyChart && data.length > 0 && <TrendCard data={data} cycling />}
+      {!showRunning && !showStrength && !showCycling && (
+        <p className="period-trends-empty m-0 text-[color:var(--muted)] text-[12px]">Выбери вид тренировки, чтобы увидеть динамику.</p>
       )}
     </section>
   );

@@ -8,7 +8,6 @@ import {
   emptySummary,
   getActivityCategory,
   getActivityDate,
-  summarizeActivities,
   summarizeCalendar,
 } from "../lib/calendarAnalytics";
 
@@ -51,16 +50,6 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
     saveCalendarView(filterKey, selectedTypes);
   }, [filterKey, selectedTypes]);
   const [selection, setSelection] = useState(() => initial?.selection ?? { type: "month", ...currentCalendarMonth() });
-  const [weekJump, setWeekJump] = useState(0);
-
-  function showCurrentWeek() {
-    const month = currentCalendarMonth();
-    setExpandedYear(month.year);
-    setExpandedMonth(month);
-    setSelection({ type: "month", ...month });
-    setWeekJump((count) => count + 1);
-  }
-
   useEffect(() => {
     const save = () => saveCalendarView(storageKey, {
       selection, expandedYear, expandedMonth, yearChartOpen, scrollY: window.scrollY,
@@ -70,16 +59,16 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
   }, [storageKey, selection, expandedYear, expandedMonth, yearChartOpen]);
 
   useEffect(() => {
-    if (!weekJump && dayFromPath(pagePath)) return;
+    if (dayFromPath(pagePath)) return;
     const frame = requestAnimationFrame(() => {
-      if (!weekJump && Number.isFinite(initial?.scrollY)) {
+      if (Number.isFinite(initial?.scrollY)) {
         window.scrollTo(0, initial.scrollY);
       } else {
         scrollToCurrentWeek();
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [initial, pagePath, weekJump]);
+  }, [initial, pagePath]);
 
   useEffect(() => {
     const linkedDay = dayFromPath(pagePath);
@@ -115,19 +104,19 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
     const date = getActivityDate(activity);
     return date >= periodStart && date <= periodEnd;
   }), [activities, periodStart, periodEnd]);
-  const matchingActivities = useMemo(
-    () => periodActivities.filter((activity) => selectedTypes.includes(getActivityCategory(activity))),
-    [periodActivities, selectedTypes]
-  );
-
-  const periodSummary = summarizeActivities(matchingActivities);
-  const { runCount, strengthCount, runKm: totalRunKm, hrWeight, hrSeconds } = periodSummary;
-  const averageKm = runCount ? totalRunKm / runCount : 0;
-  const averageHr = hrWeight ? Math.round(hrSeconds / hrWeight) : null;
-  const averagePace = averageRunningPace(periodSummary);
   const showRunning = selectedTypes.includes("running");
   const showStrength = selectedTypes.includes("strength");
+  const showCycling = selectedTypes.includes("cycling");
   const chartYear = selection.year;
+  const yearSummary = yearSummaries.get(chartYear) ?? emptySummary();
+  const runCount = showRunning ? yearSummary.runCount : 0;
+  const strengthCount = showStrength ? yearSummary.strengthCount : 0;
+  const cyclingCount = showCycling ? yearSummary.cyclingCount : 0;
+  const totalRunKm = showRunning ? yearSummary.runKm : 0;
+  const cyclingKm = showCycling ? yearSummary.cyclingKm : 0;
+  const averageKm = runCount ? totalRunKm / runCount : 0;
+  const averageHr = showRunning && yearSummary.hrWeight ? Math.round(yearSummary.hrSeconds / yearSummary.hrWeight) : null;
+  const averagePace = showRunning ? averageRunningPace(yearSummary) : null;
   const chartMonth = expandedMonth?.month;
   const monthlySummary = chartMonth == null ? null : monthSummaries.get(`${chartYear}-${chartMonth}`);
 
@@ -148,6 +137,7 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
         runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,
         pace: averageRunningPace(summary),
         avgHr: summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
+        cyclingKm: summary?.cyclingKm || 0,
         strengthCount: summary?.strengthCount || 0,
       };
     });
@@ -164,6 +154,7 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
         runKm: isFuture ? null : Number((summary?.runKm || 0).toFixed(1)),
         pace: isFuture ? null : averageRunningPace(summary),
         avgHr: !isFuture && summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
+        cyclingKm: isFuture ? null : summary?.cyclingKm || 0,
         strengthCount: isFuture ? null : summary?.strengthCount || 0,
       };
     });
@@ -215,6 +206,8 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
     periodActivities,
     runCount,
     strengthCount,
+    cyclingCount,
+    cyclingKm,
     totalRunKm,
     averageKm,
     averageHr,
@@ -228,7 +221,6 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
     yearChartData,
     selectionLabel,
     selectDay,
-    showCurrentWeek,
     dayActivities,
     dayRuns,
     dayPlan,

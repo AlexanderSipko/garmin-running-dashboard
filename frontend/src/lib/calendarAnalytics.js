@@ -7,6 +7,7 @@ export function getActivityCategory(activity) {
   const type = String(activity.type || "").toLowerCase().replace(/[^a-zа-я0-9]+/g, "_");
   if (/(strength|weight_training|gym|силов|зал)/.test(type)) return "strength";
   if (/(^|_)(run|running|virtual_run|trail_running)(_|$)/.test(type)) return "running";
+  if (/(^|_)(cycling|biking|bike|bicycle|велосипед)(_|$)/.test(type)) return "cycling";
   return null;
 }
 
@@ -15,7 +16,7 @@ export function dayKey(date) {
 }
 
 export function emptySummary() {
-  return { runKm: 0, runSeconds: 0, timedKm: 0, timedSeconds: 0, hrSeconds: 0, hrWeight: 0, runCount: 0, strengthCount: 0 };
+  return { runKm: 0, runSeconds: 0, timedKm: 0, timedSeconds: 0, hrSeconds: 0, hrWeight: 0, runCount: 0, strengthCount: 0, cyclingKm: 0, cyclingCount: 0 };
 }
 
 export function averageRunningPace(summary) {
@@ -38,6 +39,9 @@ function addActivity(summary, activity, category) {
       summary.hrSeconds += heartRate * seconds;
       summary.hrWeight += seconds;
     }
+  } else if (category === "cycling") {
+    summary.cyclingKm += Number(activity.distance_meters || 0) / 1000;
+    summary.cyclingCount += 1;
   } else if (category === "strength") {
     summary.strengthCount += 1;
   }

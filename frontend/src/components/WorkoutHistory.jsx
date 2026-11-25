@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowUpRight, ChevronDown, Copy, Dumbbell, Footprints } from "lucide-react";
+import { ArrowUpRight, Bike, ChevronDown, Copy, Dumbbell, Footprints } from "lucide-react";
 import { getActivityCategory, getActivityDate } from "../lib/calendarAnalytics";
 import { fmtDuration } from "../lib/format";
 import { PageLink } from "../app/DashboardRouter";
@@ -7,7 +7,7 @@ import RefreshActivityButton from "./RefreshActivityButton";
 import { copyText } from "../lib/copyText";
 import { dayPath } from "../lib/dashboardRoutes";
 
-const filters = [["all", "Все"], ["running", "Бег"], ["strength", "Силовые"]];
+const filters = [["all", "Все"], ["running", "Бег"], ["strength", "Силовые"], ["cycling", "Велосипед"]];
 const pageSize = 24;
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" });
 const kmFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
@@ -97,16 +97,17 @@ export default function WorkoutHistory({ activities, loading, error, demo, onAct
       <ul className="grid gap-2">
         {visible.slice(0, limit).map(({ activity, category, date, key }) => {
           const strength = category === "strength";
-          const Icon = strength ? Dumbbell : Footprints;
+          const cycling = category === "cycling";
+          const Icon = strength ? Dumbbell : cycling ? Bike : Footprints;
           const open = expanded === key;
           const duration = activity.moving_duration_seconds || activity.duration_seconds;
           return (
             <li key={key} className="rounded-xl border border-[#344650] bg-[#1b282e]">
               <button type="button" aria-expanded={open} onClick={() => setExpanded(open ? null : key)}
                 className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left hover:bg-[#23343c]">
-                <Icon size={19} aria-hidden="true" className={strength ? "shrink-0 text-[#b7c4ff]" : "shrink-0 text-[#ffc988]"} />
+                <Icon size={19} aria-hidden="true" className={strength ? "shrink-0 text-[#b7c4ff]" : cycling ? "shrink-0 text-[#8de0cc]" : "shrink-0 text-[#ffc988]"} />
                 <span className="grid min-w-0 flex-1 gap-0.5">
-                  <b className="break-words">{activity.name || (strength ? "Силовая" : "Пробежка")}</b>
+                  <b className="break-words">{activity.name || (strength ? "Силовая" : cycling ? "Велосипед" : "Пробежка")}</b>
                   <small className="text-sm text-slate-400">
                     {dateFormat.format(date)}
                     {strength ? (duration > 0 && ` · ${fmtDuration(duration)}`)

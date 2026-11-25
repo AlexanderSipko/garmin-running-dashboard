@@ -1,6 +1,6 @@
 import SectionEyebrow from "./SectionEyebrow";
 import { useEffect, useState } from "react";
-import { Clock3, Footprints, Gauge, Heart, RefreshCw, Route } from "lucide-react";
+import { Bike, Clock3, Footprints, Gauge, Heart, RefreshCw, Route } from "lucide-react";
 import { requestActivityDetails } from "../lib/activityDetailsRequest";
 import { fmtDate, fmtDuration, fmtPace } from "../lib/format";
 import { getActivityCategory } from "../lib/calendarAnalytics";
@@ -45,6 +45,8 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
   const activityId = String(activity.id || "");
   const activityType = String(activity.type || "").toLowerCase();
   const isRun = /(run|running|trail)/.test(activityType);
+  const cycling = getActivityCategory(activity) === "cycling";
+  const SportIcon = cycling ? Bike : Footprints;
   const canLoadDetails = /^\d+$/.test(activityId) && isRun;
   const [detail, setDetail] = useState(() => detailCache.get(activityId) ?? null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -99,8 +101,8 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
     <article className="activity-detail-run py-3 px-0 [border-top:1px_solid_var(--border)] [&_h4]:flex [&_h4]:items-center [&_h4]:gap-2 [&_h4]:mt-0 mx-0 mb-3 [&_h4]:text-[13px] [&_h4_svg]:text-[color:var(--accent)]">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h4 className="flex items-center gap-2 text-sm font-bold">
-          <Footprints size={16} className="text-[color:var(--accent)]" aria-hidden="true" />
-          {activity.name || "Пробежка"}
+          <SportIcon size={16} className="text-[color:var(--accent)]" aria-hidden="true" />
+          {activity.name || (cycling ? "Велосипед" : "Пробежка")}
         </h4>
         {canLoadDetails && (
           <button type="button" disabled={detailLoading} onClick={() => setRefreshCount((count) => count + 1)}
@@ -118,8 +120,8 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
         />
         <DetailMetric
           icon={<Gauge size={15} />}
-          label="СРЕДНИЙ ТЕМП"
-          value={`${fmtPace(
+          label={cycling ? "СРЕДНЯЯ СКОРОСТЬ" : "СРЕДНИЙ ТЕМП"}
+          value={cycling ? (durationSeconds > 0 ? `${(distanceKm * 3600 / durationSeconds).toFixed(1)} км/ч` : "—") : `${fmtPace(
             distanceKm ? durationSeconds / distanceKm : 0
           )} /км`}
         />

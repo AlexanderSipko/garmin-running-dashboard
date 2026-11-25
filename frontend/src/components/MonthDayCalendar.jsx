@@ -1,6 +1,6 @@
 import DayWeather, { weatherLabel } from "./DayWeather";
 import { Fragment, useState } from "react";
-import { CalendarDays, Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
+import { Bike, CalendarDays, Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
 import { averageRunningPace, dayKey, demoWeeklyVolumeReference, weeklyVolumeComparison } from "../lib/calendarAnalytics";
 import { fmtPace } from "../lib/format";
 import { localDateKey } from "../lib/wellnessDates";
@@ -78,6 +78,7 @@ export default function MonthDayCalendar({
   const calendarWeeks = buildWeeks(expandedYear, calendarMonth);
   const today = new Date();
   const showRunning = selectedTypes.includes("running");
+  const showCycling = selectedTypes.includes("cycling");
   const showStrength = selectedTypes.includes("strength");
   const planByDate = new Map(plannedSessions.map((session) => [session.date, session]));
   let historyStart = null;
@@ -195,6 +196,7 @@ export default function MonthDayCalendar({
               const monthName = monthNames[month];
               const daily = daySummaries.get(dayKey(date)) || { runKm: 0, runCount: 0, strengthCount: 0 };
               const hasRun = showRunning && daily.runCount > 0;
+              const hasCycling = showCycling && daily.cyclingCount > 0;
               const hasStrength = showStrength && daily.strengthCount > 0;
               const dateKey = localDateKey(date);
               const weather = forecast?.[dateKey];
@@ -213,7 +215,7 @@ export default function MonthDayCalendar({
                   type="button"
                   key={day}
                   title={[planLabel, forecastLabel].filter(Boolean).join(" · ") || undefined}
-                  aria-label={`${day} ${monthName} ${year}${hasRun ? `, бег ${daily.runKm.toFixed(1)} км` : ""}${hasStrength ? ", силовая тренировка" : ""}${planLabel ? `, ${planLabel}` : ""}${forecastLabel ? `, ${forecastLabel}` : ""}`}
+                  aria-label={`${day} ${monthName} ${year}${hasRun ? `, бег ${daily.runKm.toFixed(1)} км` : ""}${hasCycling ? `, велосипед ${daily.cyclingKm.toFixed(1)} км` : ""}${hasStrength ? `, силовые: ${daily.strengthCount}` : ""}${planLabel ? `, ${planLabel}` : ""}${forecastLabel ? `, ${forecastLabel}` : ""}`}
                   onClick={() => onSelectDay({ year, month, day })}
                 >
                   <span aria-hidden="true" className={`pointer-events-none absolute right-1 top-0.5 bg-gradient-to-br bg-clip-text text-[15px] font-bold leading-none text-transparent ${weekday >= 5 ? "from-[#f3bc9a]/85 to-[#f3bc9a]/25" : "from-[#c2cfd4]/75 to-[#c2cfd4]/20"}`}>
@@ -224,8 +226,12 @@ export default function MonthDayCalendar({
                       {daily.runKm.toFixed(1)}<span className="ml-0.5 text-[8px] font-semibold">км</span>
                     </span>
                   )}
-                  {hasStrength && !hasRun && (
-                    <Dumbbell className="text-[#a7b5ff]" size={15} aria-hidden="true" />
+                  {hasCycling && <span className="flex items-center gap-0.5 whitespace-nowrap text-[clamp(9px,1.2vw,12px)] text-[#8de0cc]"><Bike size={11} aria-hidden="true" />{daily.cyclingKm.toFixed(1)}</span>}
+                  {hasStrength && (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] leading-tight text-[#a7b5ff]">
+                      <Dumbbell size={13} aria-hidden="true" />
+                      {daily.strengthCount > 1 && daily.strengthCount}
+                    </span>
                   )}
                   {showPlan && (
                     <span aria-hidden="true" className="max-w-full whitespace-nowrap rounded-md bg-[#303f5a] px-1 py-0.5 text-[10px] font-semibold leading-tight text-[#c2ceff] normal-case sm:px-1.5 sm:text-xs">
