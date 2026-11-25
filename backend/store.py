@@ -11,6 +11,13 @@ from pathlib import Path
 from typing import Callable
 
 
+MAX_USERS = 3
+
+
+class RegistrationLimitReached(Exception):
+    pass
+
+
 class Database:
     def __init__(self, url: str, sqlite_path: Path) -> None:
         self.url = url
@@ -55,6 +62,13 @@ class Database:
                 connection.execute("SELECT pg_advisory_xact_lock(629438001)")
             connection.execute("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TEXT NOT NULL)")
             connection.execute("CREATE TABLE IF NOT EXISTS user_settings (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, garmin_key TEXT, ai_key TEXT)")
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS coach_settings (
+                    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    openai_key TEXT,
+                    provider TEXT NOT NULL DEFAULT 'gigachat'
+                )
+            """)
             connection.execute("CREATE TABLE IF NOT EXISTS user_data (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, payload TEXT NOT NULL DEFAULT '{}')")
 
             connection.execute("CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL)")
@@ -189,6 +203,19 @@ class Database:
     def register_user(self, email: str, password_hash: str) -> str | None:
         user_id = secrets.token_urlsafe(18)
         with self.transaction() as connection:
+            # Serialize the capacity check with account creation across workers.
+            if self.is_postgres:
+                connection.execute("LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE")
+            else:
+                connection.execute("BEGIN IMMEDIATE")
+            count, = connection.execute("SELECT COUNT(*) FROM users").fetchone()
+            if count >= MAX_USERS:
+                existing = connection.execute(
+                    f"SELECT 1 FROM users WHERE email = {self.json_parameter()}", (email,),
+                ).fetchone()
+                if existing:
+                    return None
+                raise RegistrationLimitReached()
             result = connection.execute(
                 f"INSERT INTO users (id, email, password_hash, created_at) VALUES ({self.json_parameter()}, {self.json_parameter()}, {self.json_parameter()}, CURRENT_TIMESTAMP) ON CONFLICT (email) DO NOTHING",
                 (user_id, email, password_hash),
@@ -257,6 +284,23 @@ class Database:
                 (user_id, value),
             )
 
+    def coach_settings(self, user_id: str):
+        mark = self.json_parameter()
+        with self.transaction() as connection:
+            return connection.execute(
+                f"SELECT provider, openai_key FROM coach_settings WHERE user_id = {mark}", (user_id,),
+            ).fetchone() or ("gigachat", None)
+
+    def save_coach_setting(self, user_id: str, field: str, value: str | None):
+        column = {"provider": "provider", "openai_key": "openai_key"}[field]
+        mark = self.json_parameter()
+        with self.transaction() as connection:
+            connection.execute(
+                f"INSERT INTO coach_settings (user_id, {column}) VALUES ({mark}, {mark}) "
+                f"ON CONFLICT (user_id) DO UPDATE SET {column} = excluded.{column}",
+                (user_id, value),
+            )
+
     def read(self, user_id: str) -> dict:
         mark = self.json_parameter()
         with self.transaction() as connection:
@@ -288,8 +332,9 @@ class Database:
                     (user_id, activity_id),
                 ).fetchone()
                 previous = json.loads(row[0]) if row else {}
+                detail.pop("heart_rate_seconds_by_bpm", None)
                 if previous.get("points") or previous.get("route"):
-                    for field in ("points", "route", "sample_count", "track_available"):
+                    for field in ("points", "route", "sample_count", "track_available", "heart_rate_seconds_by_bpm"):
                         if field in previous:
                             detail[field] = previous[field]
                     detail["track_message"] = "Не удалось обновить трек. Показана сохранённая запись."

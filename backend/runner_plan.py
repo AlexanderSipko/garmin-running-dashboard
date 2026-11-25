@@ -31,6 +31,7 @@ PLAN_RULES = (
 
 
 class RunnerPlan(BaseModel):
+    height_cm: int | None = Field(default=None, ge=50, le=275)
     goal: str = Field(default="", max_length=160)
     race_date: date | None = None
     stage: Stage | None = None
@@ -77,6 +78,8 @@ def plan_context(raw_plan: dict | None, reference: date) -> dict:
             f"Z{index + 1}": {"min_inclusive": start, "max_inclusive": ends[index]}
             for index, start in enumerate(starts)
         }
+    if plan.height_cm is not None:
+        context["height_cm"] = plan.height_cm
     if plan.goal:
         context["goal"] = plan.goal
     if plan.stage:

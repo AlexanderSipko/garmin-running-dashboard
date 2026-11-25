@@ -4,11 +4,12 @@ import { Bike, Clock3, Footprints, Gauge, Heart, RefreshCw, Route } from "lucide
 import { requestActivityDetails } from "../lib/activityDetailsRequest";
 import { fmtDate, fmtDuration, fmtPace } from "../lib/format";
 import { getActivityCategory } from "../lib/calendarAnalytics";
+import ActivityCoachAnalysis from "./ActivityCoachAnalysis";
 import StrengthActivity from "./StrengthActivity";
 import ActivityRouteMap from "./ActivityRouteMap";
 import ActivityTrackCharts from "./ActivityTrackCharts";
 
-function ActivityDetail({ date, activities, detailCache, onActivityUpdated }) {
+function ActivityDetail({ date, activities, detailCache, onActivityUpdated, onReview }) {
   return (
     <section className="activity-detail pt-[15px] px-0 pb-0 mt-[14px] [border-top:1px_solid_var(--border)]">
       <div className="activity-detail-heading flex items-center justify-between gap-[14px] [&_h3]:mt-1 mx-0 mb-3 [&_h3]:[font:600_14px_Manrope,_sans-serif] [&_h3]:capitalize">
@@ -26,9 +27,14 @@ function ActivityDetail({ date, activities, detailCache, onActivityUpdated }) {
 
       {activities.length ? (
         activities.map((activity, index) => (
-          getActivityCategory(activity) === "strength"
-            ? <StrengthActivity activity={activity} onActivityUpdated={onActivityUpdated} key={activity.id || index} />
-            : <ActivitySummary activity={activity} detailCache={detailCache} onActivityUpdated={onActivityUpdated} key={activity.id || index} />
+          <div key={activity.id || index} className="mb-3">
+            {getActivityCategory(activity) === "strength"
+              ? <StrengthActivity activity={activity} onActivityUpdated={onActivityUpdated} />
+              : <ActivitySummary activity={activity} detailCache={detailCache} onActivityUpdated={onActivityUpdated} />}
+            {/^[1-9]\d*$/.test(String(activity.id)) && (
+              <ActivityCoachAnalysis activity={activity} onReview={onReview} />
+            )}
+          </div>
         ))
       ) : (
         <p className="rest-day-message mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">В этот день тренировок нет.</p>

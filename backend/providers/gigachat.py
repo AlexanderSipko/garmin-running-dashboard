@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 from settings import settings
+from coach_usage import TokenUsage
 
 
 class GigaChatError(RuntimeError):
@@ -28,6 +29,7 @@ class GigaChatClient:
 
     def __init__(self, auth_key: str) -> None:
         self.auth_key = auth_key
+        self.usage = TokenUsage()
         self.scope = settings.gigachat_scope
         self.model = settings.gigachat_model
         self.ca_bundle = settings.gigachat_ca_bundle
@@ -95,9 +97,11 @@ class GigaChatClient:
             raise self._response_error(response)
 
         try:
-            return response.json()
+            payload = response.json()
         except ValueError:
             raise GigaChatError("GigaChat returned invalid JSON") from None
+        self.usage.record(payload.get("usage") or {}, input_key="prompt_tokens", output_key="completion_tokens")
+        return payload
 
     def complete_with_tools(self, messages, max_tokens, temperature, tools):
         functions = tools.discover()
@@ -133,12 +137,7 @@ class GigaChatClient:
             {"role": "function", "name": name, "content": json.dumps(result, ensure_ascii=False, separators=(",", ":"))},
         ], max_tokens, temperature, functions=functions, function_call="none", **chat_limits)
 
-        first_usage = response.get("usage") or {}
-        final_usage = final.get("usage") or {}
-        final["usage"] = {
-            key: (first_usage.get(key) or 0) + (final_usage.get(key) or 0)
-            for key in ("prompt_tokens", "completion_tokens", "total_tokens")
-        }
+
         return final
 
     def check_credentials(self) -> None:

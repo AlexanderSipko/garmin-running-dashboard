@@ -17,7 +17,7 @@ export function CoachMessages({ messages }) {
           {exchange.map((message, position) => (
             <div key={position} className={`rounded-xl p-3 text-sm leading-relaxed ${message.role === "user" ? "bg-[#382e24]" : "bg-[#172229]"}`}>
               <b className="text-xs text-[#f3bc7f]">{message.role === "user" ? "Ты" : "Консультант"}</b>
-              <p className="mt-1 whitespace-pre-wrap break-words">{message.content}</p>
+              <p className="mt-1 whitespace-pre-wrap break-words">{message.role === "assistant" && message.content?.trim() === "<" ? "Ответ оборвался." : message.content}</p>
             </div>
           ))}
         </div>

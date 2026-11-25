@@ -10,6 +10,7 @@ from typing import Any
 from fitparse import FitFile
 from garmin_personal_api import GarminPersonalApiClient, PersonalApiAuthenticator
 from settings import settings
+from heart_rate_distribution import seconds_by_bpm
 
 def _clean_activity(row: dict[str, Any]) -> dict[str, Any]:
     activity_type = row.get("activityType") or row.get("activityTypeDTO") or {}
@@ -99,7 +100,7 @@ def _split_rows(activity: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _fit_track_rows(
     archive_bytes: bytes, max_points: int = 1500,
-) -> tuple[list[dict[str, Any]], int, list[tuple[float, float]]]:
+) -> tuple[list[dict[str, Any]], int, list[tuple[float, float]], dict[str, int]]:
     """Decode GPS-like record samples from Garmin's zipped original FIT file."""
     with zipfile.ZipFile(BytesIO(archive_bytes)) as archive:
         fit_member = next(
@@ -107,7 +108,7 @@ def _fit_track_rows(
             None,
         )
         if fit_member is None:
-            return [], 0, []
+            return [], 0, [], {}
         if fit_member.file_size > 50 * 1024 * 1024:
             raise ValueError("Garmin FIT file is unexpectedly large")
         fit_bytes = archive.read(fit_member)
@@ -172,6 +173,7 @@ def _fit_track_rows(
             "elevation_meters": round(float(altitude), 1) if altitude is not None else None,
         })
 
+    heart_rate_seconds = seconds_by_bpm(rows)
     total_count = len(rows)
     if total_count > max_points:
         stride = math.ceil(total_count / max_points)
@@ -183,7 +185,7 @@ def _fit_track_rows(
     if len(route) > max_route_points:
         last = len(route) - 1
         route = [route[round(index * last / (max_route_points - 1))] for index in range(max_route_points)]
-    return rows, total_count, route
+    return rows, total_count, route, heart_rate_seconds
 
 
 def _records(payload: Any) -> list[dict[str, Any]]:
@@ -349,11 +351,11 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         track_refresh_failed = False
         try:
             file_bytes = client.download_activity(activity_id)
-            points, sample_count, route = _fit_track_rows(file_bytes)
+            points, sample_count, route, heart_rate_seconds = _fit_track_rows(file_bytes)
             track_message = "" if points else "В исходном файле Garmin нет точек записи FIT."
         except Exception:
             track_refresh_failed = True
-            points, sample_count, route = [], 0, []
+            points, sample_count, route, heart_rate_seconds = [], 0, [], {}
             track_message = "Garmin не вернул исходный FIT-файл этой тренировки."
 
     return {
@@ -361,6 +363,7 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         "activity": refreshed_activity,
         "splits": splits,
         "points": points,
+        "heart_rate_seconds_by_bpm": heart_rate_seconds,
         "route": route,
         "sample_count": sample_count,
         "track_refresh_failed": track_refresh_failed,

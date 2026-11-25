@@ -75,6 +75,51 @@ function KeySetting({ provider, label, configured, onChange }) {
   );
 }
 
+function CoachProviderSetting({ account, onChange, onPlanSaved }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function select(event) {
+    const provider = event.target.value;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await accountRequest("/coach-provider", { method: "PUT", body: JSON.stringify({ provider }) });
+      onChange(updated);
+      onPlanSaved();
+    } catch (failure) {
+      setError(failure.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function keyChanged(provider, configured) {
+    onChange((previous) => ({
+      ...previous, [provider]: configured,
+      ai: (previous.coach_provider || "gigachat") === provider ? configured : previous.ai,
+    }));
+    onPlanSaved();
+  }
+
+  return (
+    <>
+      <label className="grid gap-1.5 rounded-2xl border border-slate-700 bg-[#1b262c] p-4 text-sm">
+        Провайдер консультанта
+        <select className={field} value={account.coach_provider || "gigachat"} disabled={busy} onChange={select}>
+          <option value="gigachat">GigaChat</option>
+          <option value="openai">OpenAI · GPT-6.2 Sol</option>
+        </select>
+      </label>
+      {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
+      <KeySetting provider="ai" label="Ключ GigaChat" configured={account.gigachat ?? account.ai}
+        onChange={(configured) => keyChanged("gigachat", configured)} />
+      <KeySetting provider="openai" label="Ключ OpenAI API" configured={account.openai}
+        onChange={(configured) => keyChanged("openai", configured)} />
+    </>
+  );
+}
+
 export default function AccountPanel({ account, onChange, onPlanSaved, weatherLocation, onWeatherChange }) {
   const [resetToken, setResetToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("reset-password"));
   const [mode, setMode] = useState(() => resetToken ? "reset-password" : null);
@@ -255,8 +300,7 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
                     <h3 id="connection-settings-title" className="px-1 text-sm font-semibold text-slate-300">Подключения</h3>
                     <KeySetting provider="garmin" label="Garmin Personal API key" configured={account.garmin}
                       onChange={(garmin) => onChange((previous) => ({ ...previous, garmin }))} />
-                    <KeySetting provider="ai" label="GigaChat Authorization Key (необязательно)" configured={account.ai}
-                      onChange={(ai) => onChange((previous) => ({ ...previous, ai }))} />
+                    <CoachProviderSetting account={account} onChange={onChange} onPlanSaved={onPlanSaved} />
                   </section>
                   <section className="grid min-w-0 gap-3" aria-labelledby="personal-settings-title">
                     <h3 id="personal-settings-title" className="px-1 text-sm font-semibold text-slate-300">Предпочтения</h3>

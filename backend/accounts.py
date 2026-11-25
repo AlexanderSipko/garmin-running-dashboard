@@ -6,13 +6,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response
+from fastapi import Body, APIRouter, BackgroundTasks, HTTPException, Query, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 
 from password_reset import RECOVERY_OWNER_EMAIL, RESET_TTL_SECONDS, reset_origin, send_reset_email
 from settings import settings
 from runner_plan import RunnerPlan
 from body_measurements import add_body_measurement_routes
+from store import RegistrationLimitReached
 from weather import add_weather_routes
 
 COOKIE = "garmin_session"
@@ -105,7 +106,10 @@ def account_routes(database, verify_key):
         email = body.email.lower()
         limit_attempts("register", email, 3)
         salt = secrets.token_bytes(16)
-        user_id = database.register_user(email, salt.hex() + ":" + password_digest(body.password, salt))
+        try:
+            user_id = database.register_user(email, salt.hex() + ":" + password_digest(body.password, salt))
+        except RegistrationLimitReached:
+            raise HTTPException(409, "Регистрация закрыта: все три места заняты.") from None
         if user_id is None:
             raise HTTPException(409, "Аккаунт с таким email уже существует.")
         return start_session(request, response, user_id, email)
@@ -195,11 +199,13 @@ def account_routes(database, verify_key):
     def status(request: Request):
         user_id, email = current(request)
         garmin, ai = database.keys(user_id)
+        provider, openai = database.coach_settings(user_id)
         recovery_admin = None
         if email == RECOVERY_OWNER_EMAIL:
             recovery_admin = "active" if database.is_recovery_owner(user_id) else "verify"
         return {
-            "id": user_id, "email": email, "garmin": bool(garmin), "ai": bool(ai),
+            "id": user_id, "email": email, "garmin": bool(garmin), "ai": bool(openai if provider == "openai" else ai),
+            "gigachat": bool(ai), "openai": bool(openai), "coach_provider": provider,
             "recovery_admin": recovery_admin,
         }
 
@@ -222,18 +228,28 @@ def account_routes(database, verify_key):
         database.update(user_id, update)
         return body
 
+    @router.put("/coach-provider")
+    def choose_coach_provider(request: Request, provider: Literal["gigachat", "openai"] = Body(embed=True)):
+        user_id, _ = current(request)
+        database.save_coach_setting(user_id, "provider", provider)
+        return status(request)
+
     @router.put("/keys/{provider}")
-    def save(provider: Literal["garmin", "ai"], body: KeyInput, request: Request):
+    def save(provider: Literal["garmin", "ai", "openai"], body: KeyInput, request: Request):
         user_id, _ = current(request)
         value = body.value.strip() if body.value else ""
         encrypted = cipher().encrypt(value.encode()).decode() if value else None
-        database.save_key(user_id, provider, encrypted)
+        if provider == "openai":
+            database.save_coach_setting(user_id, "openai_key", encrypted)
+        else:
+            database.save_key(user_id, provider, encrypted)
         return {"configured": bool(value)}
 
     @router.post("/keys/{provider}/check")
-    async def check(provider: Literal["garmin", "ai"], request: Request):
+    async def check(provider: Literal["garmin", "ai", "openai"], request: Request):
         user_id, _ = current(request)
-        value = decrypt(database.keys(user_id)[0 if provider == "garmin" else 1])
+        encrypted = database.coach_settings(user_id)[1] if provider == "openai" else database.keys(user_id)[0 if provider == "garmin" else 1]
+        value = decrypt(encrypted)
         if not value:
             raise HTTPException(409, "Сначала сохрани ключ.")
         await verify_key(provider, value)

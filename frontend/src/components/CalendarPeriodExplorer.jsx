@@ -17,7 +17,6 @@ import { SelectedDayWeather } from "./DayWeather";
 import WeatherPanel from "./WeatherPanel";
 import DaySummary from "./DaySummary";
 import DayTrainingPlan from "./DayTrainingPlan";
-import WorkoutReview from "./WorkoutReview";
 import MonthDayCalendar from "./MonthDayCalendar";
 import ActivityDetail from "./ActivityDetail";
 import RunningCoachPanel from "./RunningCoachPanel";
@@ -39,6 +38,7 @@ function CalendarPeriodExplorer({
     yearChartData, selectionLabel, selectDay, dayActivities, dayRuns, dayPlan,
   } = useCalendarPeriod({ activities, pagePath, publicDemo, plannedSessions, deloadWeeks, viewScope });
 
+  const [activityReview, setActivityReview] = useState(null);
   const yearChartModeKey = `calendar-year-chart-mode:v1:${viewScope}`;
   const [combinedYear, setCombinedYear] = useState(() => readCalendarView(yearChartModeKey) === true);
 
@@ -166,6 +166,8 @@ function CalendarPeriodExplorer({
             {!publicDemo && <WeatherPanel weather={weather} request={weatherRequest} onChange={onWeatherChange} />}
             {coachEnabled && <RunningCoachPanel
               key={planRevision}
+              activityReview={activityReview}
+              viewScope={viewScope}
               period={selection.type}
               periodStart={periodStart}
               periodEnd={periodEnd}
@@ -467,8 +469,8 @@ function CalendarPeriodExplorer({
             {(!dayPlan || dayActivities.length > 0) && (
               <>
                 {(publicDemo || dayRuns.length > 1 || dayActivities.length === 0) && <DaySummary activities={dayRuns} date={periodStart} />}
-                {!publicDemo && <ActivityDetail date={periodStart} activities={dayActivities} detailCache={detailCache} onActivityUpdated={onActivityUpdated} />}
-                {!publicDemo && dayRuns.length > 0 && <WorkoutReview key={localDateKey(periodStart)} runs={dayRuns} plan={dayPlan} />}
+                {!publicDemo && <ActivityDetail date={periodStart} activities={dayActivities} detailCache={detailCache} onActivityUpdated={onActivityUpdated}
+                  onReview={coachEnabled ? (activity, onAnalysis) => setActivityReview({ activity, onAnalysis }) : undefined} />}
               </>
             )}
           </div>

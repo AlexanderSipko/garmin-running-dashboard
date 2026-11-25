@@ -83,9 +83,11 @@ export default function RunnerPlanForm({ request, onSaved }) {
 
   function change(event) {
     const { name, value } = event.target;
+    const nextValue = name === "height_cm" ? (value ? Number(value) : null)
+      : name === "race_date" || name === "stage" ? value || null : value;
     setPlan((current) => ({
       ...current,
-      [name]: name === "race_date" || name === "stage" ? value || null : value,
+      [name]: nextValue,
     }));
   }
 
@@ -103,6 +105,11 @@ export default function RunnerPlanForm({ request, onSaved }) {
             Цель
             <input className={field} name="goal" value={plan.goal} maxLength={160} onChange={change}
               placeholder="Полумарафон быстрее 1:45" />
+          </label>
+          <label className="grid gap-1 text-sm">
+            Рост, см
+            <input className={`${field} w-full max-w-40`} name="height_cm" type="number" inputMode="numeric"
+              min={50} max={275} step={1} value={plan.height_cm ?? ""} onChange={change} />
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-sm">

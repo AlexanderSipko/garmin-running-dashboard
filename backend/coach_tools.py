@@ -1,6 +1,7 @@
 """Private, read-only Garmin tools exposed to the consultant over MCP."""
 
 import asyncio
+from copy import deepcopy
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -12,14 +13,21 @@ from mcp.shared.memory import create_connected_server_and_client_session
 
 from activity_metrics import activity_pace, pace_label
 from dashboard_data import parse_date
-from garmin_api import get_running_activity_splits, get_wellness_series
+from garmin_api import get_running_activity_detail, get_running_activity_splits, get_wellness_series
 from readiness import recovery_indicators
+from activity_metrics import activity_kind
+from heart_rate_distribution import running_zone_times
+from runner_plan import plan_context
+from training_week import WeekPreferences, build_week_draft, change_week_distance, save_calendar_session
 
 
 class GarminCoachTools:
     """One instance per request, scoped to the authenticated account."""
 
     def __init__(self, store, read_detail, garmin_key):
+        self.session_proposal = None
+        self.week_proposal = None
+        self.review_only = False
         self.server = FastMCP("Garmin consultant tools")
 
         @self.server.tool()
@@ -95,7 +103,11 @@ class GarminCoachTools:
                         splits = []
                         source = "garmin_unavailable"
 
+            zones = plan_context(store.get("runner_plan"), date.today()).get("running_heart_rate_zones_bpm")
             return {
+                "heart_rate_zone_times": running_zone_times(saved, zones) if activity_kind(activity) == "run" else None,
+                "average_heart_rate_bpm": activity.get("avg_hr_bpm"),
+                "max_heart_rate_bpm": activity.get("max_hr_bpm"),
                 "source": source,
                 "name": str(activity.get("name") or "")[:100],
                 "date": str(activity.get("start_time") or "")[:10],
@@ -108,6 +120,80 @@ class GarminCoachTools:
                     for label in [pace_label(row.get("pace_seconds_per_km"))]
                 ],
             }
+
+        @self.server.tool()
+        def get_running_zone_times(activity_id: str) -> dict:
+            """Read time in personal running heart-rate zones. Fetch original Garmin FIT if detailed data is missing."""
+            activity = next((row for row in store.get("activities", []) if str(row.get("id")) == activity_id), None)
+            if not activity or activity_kind(activity) != "run":
+                return {"error": "Пробежка отсутствует в истории аккаунта."}
+            zones = plan_context(store.get("runner_plan"), date.today()).get("running_heart_rate_zones_bpm")
+            if not zones:
+                return {"error": "Пульсовые зоны для бега не заполнены."}
+            saved = read_detail(activity_id)
+            estimated = running_zone_times(saved, zones)
+            if estimated and estimated["source"] == "fit_samples":
+                return estimated
+            key = garmin_key()
+            if key:
+                try:
+                    with TemporaryDirectory(prefix="coach-garmin-") as directory:
+                        detail = get_running_activity_detail(activity_id, key=key, cache_path=Path(directory) / "token.json")
+                    exact = running_zone_times(detail, zones)
+                    if exact:
+                        return exact
+                except Exception:
+                    pass
+            return estimated or {"error": "Garmin не предоставил точки пульса для расчёта."}
+
+        @self.server.tool()
+        def propose_running_week(preferences: WeekPreferences) -> dict:
+            """Preview a seven-day plan from recent running load. Ask for schedule preferences if unknown."""
+            today = date.today()
+            active = store.get("training_week_active")
+            if active and active["sessions"][-1]["date"] >= today.isoformat():
+                return {"error": "Сначала заверши текущий план недели."}
+            try:
+                draft = build_week_draft(
+                    store.get("activities", []), store.get("runner_plan") or {}, today, preferences,
+                    store.get("deload_weeks", {}),
+                )
+            except ValueError as error:
+                return {"error": str(error)}
+            self.week_proposal = preferences.model_dump(mode="json")
+            return {"sessions": draft["sessions"], "saved": False}
+
+        @self.server.tool()
+        def propose_running_session(
+            day: date, kind: Literal["easy", "recovery", "long", "tempo", "intervals", "quality"], distance_km: float, instruction: str,
+        ) -> dict:
+            """Preview one future run or change to the app calendar. Save requires user confirmation in the app."""
+            today = date.today()
+            if not today <= day <= today + timedelta(days=30):
+                return {"error": "Выбери дату в пределах следующих 30 дней."}
+            key = day.isoformat()
+            active = store.get("training_week_active")
+            session = next((row for row in (active or {}).get("sessions", []) if row["date"] == key), None)
+            proposal = {"session_date": key, "kind": kind, "distance_km": distance_km, "instruction": instruction.strip()}
+            try:
+                if active and session and session["kind"] != "rest":
+                    change_week_distance(active, store.get("activities", []), today, day, distance_km,
+                                         kind=kind, instruction=instruction)
+                    proposal.update(plan_id=active["id"], revision=active.get("revision", 0))
+                else:
+                    current = store.get("calendar_training_sessions", {}).get(key)
+                    revision = current["revision"] if current else None
+                    mock = {field: deepcopy(store[field]) for field in ("training_week_active", "calendar_training_sessions") if field in store}
+                    mock["activities"] = store.get("activities", [])
+                    save_calendar_session(mock, today, day, kind, distance_km, instruction, revision)
+                    proposal["revision"] = revision
+                    if active and session:
+                        proposal["expected_week_id"] = active["id"]
+                        proposal["expected_week_revision"] = active.get("revision", 0)
+            except ValueError as error:
+                return {"error": str(error)}
+            self.session_proposal = proposal
+            return {"proposal": proposal, "saved": False}
 
         @self.server.tool()
         def get_garmin_wellness(
@@ -143,6 +229,7 @@ class GarminCoachTools:
                 return [
                     {"name": tool.name, "description": tool.description, "parameters": tool.inputSchema}
                     for tool in result.tools
+                    if not self.review_only or tool.name in {"get_garmin_activity", "get_running_zone_times", "get_garmin_wellness"}
                 ]
 
         return asyncio.run(list_tools())

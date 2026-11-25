@@ -45,7 +45,6 @@ export default function useCoachSummary(key, period, active) {
   const entry = entries[key];
   return {
     summary: entry?.result?.answer || "",
-    summaryUsage: entry?.result?.usage || null,
     loadingSummary: Boolean(entry?.loading),
     summaryError: entry?.error || "",
     refreshSummary,

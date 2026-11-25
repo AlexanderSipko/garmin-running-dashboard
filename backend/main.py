@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from accounts import account_routes, decrypt
 from coach import RunningCoach
+from coach_usage import TokenUsage, record_daily_usage
 from coach_plan_dialog import TRAINING_TABLE, confirmed_plan_reply, is_plan_request, plan_move_reply
 from coach_context import is_running, strength_summary
 from coach_history import chat_history_page
@@ -22,6 +23,7 @@ from coach_tools import GarminCoachTools
 from coach_analysis import analyze_period as run_period_analysis
 from dashboard_data import build_dashboard, dashboard_weekly_volume, merge_activities, monday_of, parse_date
 from providers.gigachat import GigaChatClient
+from providers.openai import OpenAIClient
 from request_security import check_origin, validation_error
 from settings import settings
 from store import Database
@@ -49,7 +51,10 @@ def update_store(update: Callable[[dict[str, Any]], None]) -> None:
 
 
 def personal_coach() -> RunningCoach:
-    return RunningCoach(decrypt(database.keys(account_id.get())[1]))
+    user_id = account_id.get()
+    provider, openai_key = database.coach_settings(user_id)
+    encrypted = openai_key if provider == "openai" else database.keys(user_id)[1]
+    return RunningCoach(decrypt(encrypted), provider)
 
 
 def account_coach_tools(store: dict[str, Any]) -> GarminCoachTools:
@@ -112,12 +117,14 @@ async def verify_key(provider: str, key: str) -> None:
         if provider == "garmin":
             today = date.today()
             await garmin_call("activities", today, today, key=key)
+        elif provider == "openai":
+            await run_in_threadpool(OpenAIClient(key).check_credentials)
         else:
             await run_in_threadpool(GigaChatClient(key).check_credentials)
     except Exception as exc:
         status = getattr(exc, "status_code", None)
         logger.warning("Provider key check failed: provider=%s status=%s type=%s", provider, status, type(exc).__name__)
-        name = "Garmin" if provider == "garmin" else "GigaChat"
+        name = {"garmin": "Garmin", "ai": "GigaChat", "openai": "OpenAI"}[provider]
         if getattr(exc, "code", None) == "ca_bundle_missing":
             detail = "GigaChat: на сервере не найден настроенный сертификат."
         elif status in (400, 401, 403):
@@ -172,6 +179,8 @@ class CoachChatRequest(CoachPeriodRequest):
     question: str = Field(min_length=1, max_length=1200)
     summary: str | None = Field(default=None, max_length=1200)
     today: date | None = None
+    activity_id: int | None = Field(default=None, gt=0)
+    save_activity_analysis: bool = False
 
 
 def analyze_period(
@@ -185,22 +194,41 @@ def analyze_period(
     chat_summary: str | None = None,
     plan_day: date | None = None,
     store: dict[str, Any] | None = None,
+    activity_id: int | None = None,
 ) -> dict[str, Any]:
-    return run_period_analysis(
-        start,
-        end,
-        previous_start,
-        previous_end,
-        question,
-        daily,
-        focus_date,
-        chat_summary,
-        plan_day,
-        store,
-        personal_coach=personal_coach,
-        read_store=read_store,
-        account_coach_tools=account_coach_tools,
-    )
+    coach = None
+
+    def request_coach():
+        nonlocal coach
+        coach = personal_coach()
+        return coach
+
+    try:
+        return run_period_analysis(
+            start,
+            end,
+            previous_start,
+            previous_end,
+            question,
+            daily,
+            focus_date,
+            chat_summary,
+            plan_day,
+            store,
+            activity_id=activity_id,
+            personal_coach=request_coach,
+            read_store=read_store,
+            account_coach_tools=account_coach_tools,
+        )
+    finally:
+        if coach is not None and coach.usage["total_tokens"]:
+            today = date.today()
+            local_day = plan_day or (focus_date if daily else None)
+            usage_day = local_day if local_day and abs((today - local_day).days) <= 1 else today
+            try:
+                update_store(lambda current: record_daily_usage(current, usage_day.isoformat(), coach.usage))
+            except Exception:
+                logger.exception("Unable to save coach usage totals")
 
 
 @app.get("/api/health")
@@ -250,6 +278,20 @@ class WorkoutReview(BaseModel):
     note: str = Field(default="", max_length=280)
 
 
+@app.get("/api/coach/activity-analysis/{activity_id}")
+def get_activity_analysis(activity_id: int) -> dict:
+    return {"analysis": read_store().get("coach_activity_analyses", {}).get(str(activity_id))}
+
+
+@app.delete("/api/coach/activity-analysis/{activity_id}")
+def delete_activity_analysis(activity_id: int) -> dict:
+    def remove(store: dict) -> None:
+        store.get("coach_activity_analyses", {}).pop(str(activity_id), None)
+
+    update_store(remove)
+    return {"analysis": None}
+
+
 @app.get("/api/coach/review/{activity_id}")
 def get_workout_review(activity_id: int) -> dict:
     return {"review": read_store().get("workout_reviews", {}).get(str(activity_id))}
@@ -296,6 +338,8 @@ class WeekDistanceRequest(WeekEditRequest):
 
 
 class CalendarSessionRequest(WeekPlanRequest):
+    expected_week_id: str | None = Field(default=None, max_length=36)
+    expected_week_revision: int | None = Field(default=None, ge=0)
     session_date: date
     kind: str = Field(max_length=20)
     distance_km: float = Field(ge=0.1, allow_inf_nan=False)
@@ -434,6 +478,10 @@ def save_training_calendar_session(request: CalendarSessionRequest) -> dict[str,
     result = {}
 
     def save(store: dict[str, Any]) -> None:
+        if request.expected_week_id is not None:
+            active = store.get("training_week_active") or {}
+            if active.get("id") != request.expected_week_id or active.get("revision", 0) != request.expected_week_revision:
+                raise HTTPException(409, "План изменился. Запроси новое предложение.")
         try:
             in_week = save_calendar_session(
                 store, request.day, request.session_date, request.kind,
@@ -466,12 +514,13 @@ def discard_training_week(day: date, draft_id: str = Query(min_length=1, max_len
 
 @app.get("/api/coach/daily")
 def saved_daily_summary(day: date, start_date: date | None = None, end_date: date | None = None):
-    if not database.keys(account_id.get())[1]:
-        raise HTTPException(409, "Добавь ключ GigaChat в настройках аккаунта.")
+    coach = personal_coach()
+    if not coach.configured:
+        raise HTTPException(409, "Добавь ключ выбранного провайдера в настройках аккаунта.")
     store = read_store()
     key = daily_cache_key(day, start_date or day, end_date or day)
     saved = store.get("coach_daily", {}).get(key)
-    if not saved or saved.get("context_version") != COACH_CONTEXT_VERSION:
+    if not saved or saved.get("context_version") != COACH_CONTEXT_VERSION or saved.get("model") != coach.model:
         return None
     if saved.get("revision") != coach_cache_revision(store):
         return None
@@ -504,6 +553,11 @@ def coach_summary(request: CoachPeriodRequest) -> dict[str, Any]:
     return result
 
 
+@app.get("/api/coach/usage")
+def coach_usage(day: date) -> dict:
+    return read_store().get("coach_usage_by_day", {}).get(day.isoformat(), TokenUsage().as_dict())
+
+
 @app.get("/api/coach/chat")
 def coach_chat_history(day: date | None = None, before: date | None = None) -> dict[str, Any]:
     messages = read_store().get("coach_chat_history", [])[-COACH_CHAT_TURNS:]
@@ -523,8 +577,15 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
     active_plan = store.get("training_week_active")
     activities = store.get("activities", [])
 
-    move_reply = plan_move_reply(question, active_plan, activities, today)
-    if move_reply is not None or is_plan_request(question):
+    activity_day = None
+    if request.activity_id is not None:
+        activity = next((row for row in activities if str(row.get("id")) == str(request.activity_id)), None)
+        activity_day = parse_date(activity.get("start_time")) if activity else None
+        if activity_day is None:
+            raise HTTPException(404, "Тренировка отсутствует в загруженной истории Garmin.")
+
+    move_reply = plan_move_reply(question, active_plan, activities, today) if not activity_day else None
+    if move_reply is not None or (not activity_day and is_plan_request(question) and active_plan and active_plan["sessions"][-1]["date"] >= today.isoformat()):
         result = {
             **(move_reply or {"answer": confirmed_plan_reply(active_plan, activities, today)}),
             "model": "training-week",
@@ -532,22 +593,28 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
         }
     else:
         result = analyze_period(
-            request.start_date,
-            request.end_date,
-            request.previous_start_date,
-            request.previous_end_date,
+            activity_day or request.start_date,
+            activity_day or request.end_date,
+            None if activity_day else request.previous_start_date,
+            None if activity_day else request.previous_end_date,
             question=question,
-            daily=request.daily,
-            focus_date=request.focus_date,
-            chat_summary=request.summary,
+            daily=request.daily and not activity_day,
+            focus_date=activity_day or request.focus_date,
+            chat_summary=None if activity_day else request.summary,
             plan_day=today,
             store=store,
+            activity_id=request.activity_id,
         )
-        if TRAINING_TABLE.search(result["answer"]):
+        if not activity_day and active_plan and TRAINING_TABLE.search(result["answer"]) and not (result.get("training_session") or result.get("training_week_proposal")):
             result["answer"] = confirmed_plan_reply(active_plan, activities, today)
 
-    focus_day = (request.focus_date or request.start_date).isoformat()
+    focus_day = (activity_day or request.focus_date or request.start_date).isoformat()
     exchange_dates = {"focus_date": focus_day, "sent_day": today.isoformat()}
+
+    analysis = None
+    if activity_day and request.save_activity_analysis:
+        analysis = {"answer": result["answer"], "model": result["model"],
+                    "created_at": datetime.now(timezone.utc).isoformat()}
 
     def save_turns(store: dict[str, Any]) -> None:
         history = store.get("coach_chat_history", [])
@@ -556,9 +623,11 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
             {"role": "assistant", "content": result["answer"], "usage": result["usage"], **exchange_dates},
         ])
         store["coach_chat_history"] = history[-COACH_CHAT_TURNS:]
+        if analysis is not None:
+            store.setdefault("coach_activity_analyses", {})[str(request.activity_id)] = analysis
 
     update_store(save_turns)
-    return result
+    return {**result, **({"activity_analysis": analysis} if analysis is not None else {})}
 
 
 @app.get("/api/dashboard")

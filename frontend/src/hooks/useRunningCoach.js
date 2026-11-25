@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import postJson from "../lib/coachRequest";
 import { localDateKey } from "../lib/wellnessDates";
+import useCoachUsage from "./useCoachUsage";
 import useCoachSummary from "./useCoachSummary";
 
 function buildRequestPeriod(period, start, end) {
@@ -55,7 +56,7 @@ function useRunningCoach({
   );
   const cacheKey = `${focusDate}:${period}:${requestPeriod.start_date}:${requestPeriod.end_date}:${syncedAt || "unsynced"}:${trainingWeekId || "no-week"}`;
 
-  const { summary, summaryUsage, loadingSummary, summaryError, refreshSummary } = useCoachSummary(
+  const { summary, loadingSummary, summaryError, refreshSummary } = useCoachSummary(
     cacheKey, requestPeriod, active && status?.configured
   );
 
@@ -97,7 +98,7 @@ function useRunningCoach({
     return refreshSummary();
   };
 
-  const ask = async (question) => {
+  const ask = async (question, activityId, saveActivityAnalysis = false) => {
     const cleanQuestion = question.trim();
     if (!cleanQuestion || sending || historyLoading) return;
 
@@ -111,6 +112,8 @@ function useRunningCoach({
         ...requestPeriod,
         today: focusDate,
         question: cleanQuestion,
+        activity_id: activityId ?? null,
+        save_activity_analysis: saveActivityAnalysis,
         summary: summary ? summary.slice(0, 1200) : null,
       });
       setChat((current) => {
@@ -131,12 +134,7 @@ function useRunningCoach({
     }
   };
 
-  const totalTokens =
-    (summaryUsage?.total_tokens || 0) +
-    messages.reduce(
-      (sum, message) => sum + (message.usage?.total_tokens || 0),
-      0
-    );
+  const usage = useCoachUsage(focusDate, active, sending || loadingSummary);
 
   return {
     enabled: status?.enabled !== false,
@@ -146,14 +144,13 @@ function useRunningCoach({
     model: status?.model || "",
     provider: status?.provider || "",
     summary,
-    summaryUsage,
     messages: pendingQuestion?.day === focusDate ? [...messages, pendingQuestion.message] : messages,
     hasHistory: todayChat?.hasHistory,
     loadingSummary,
     sending,
     historyLoading: !todayChat && historyLoading,
     error: error || summaryError,
-    totalTokens,
+    usage,
     ask,
     refreshSummary: refresh,
   };
