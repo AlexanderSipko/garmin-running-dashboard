@@ -18,6 +18,7 @@ from readiness import recovery_indicators
 from activity_metrics import activity_kind
 from heart_rate_distribution import running_zone_times
 from runner_plan import plan_context
+from weekly_heart_rate import weekly_running_zones
 from training_week import WeekPreferences, build_week_draft, change_week_distance, save_calendar_session
 
 
@@ -120,6 +121,28 @@ class GarminCoachTools:
                     for label in [pace_label(row.get("pace_seconds_per_km"))]
                 ],
             }
+
+        @self.server.tool()
+        def get_weekly_running_zones(week_start: date, compare_previous: bool = False) -> dict:
+            """Get running heart-rate zone totals and coverage for a Monday-start week, optionally comparing the previous week. Uses saved data only."""
+            if week_start.weekday() != 0:
+                return {"error": "Укажи понедельник нужной недели."}
+
+            def summarize(start: date) -> dict:
+                result = weekly_running_zones(store, start, read_detail)
+                result.pop("missing_activity_ids", None)
+                covered = result.get("covered_seconds", 0)
+                if covered:
+                    result["zone_percent"] = {
+                        zone: round(seconds * 100 / covered, 1)
+                        for zone, seconds in result["seconds_by_zone"].items()
+                    }
+                return result
+
+            result = {"week": summarize(week_start)}
+            if compare_previous:
+                result["previous_week"] = summarize(week_start - timedelta(days=7))
+            return result
 
         @self.server.tool()
         def get_running_zone_times(activity_id: str) -> dict:

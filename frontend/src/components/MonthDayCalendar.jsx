@@ -1,3 +1,5 @@
+import { demoWeekHeartRateZones } from "../data/demoDashboard";
+import WeekHeartRateZones from "./WeekHeartRateZones";
 import DayWeather, { weatherLabel } from "./DayWeather";
 import { Fragment, useState } from "react";
 import { Bike, CalendarDays, Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
@@ -71,12 +73,13 @@ function WeekVolumeComparison({ comparison, previousDeload }) {
 
 export default function MonthDayCalendar({
   expandedYear, calendarMonth, monthNames, daySummaries, selectedTypes, selection, onSelectDay,
-  deloadWeeks = {}, plannedSessions = [], onMarkDeload, syncBusy, forecast, weeklyVolume, publicDemo,
+  deloadWeeks = {}, plannedSessions = [], onMarkDeload, syncBusy, forecast, weeklyVolume, publicDemo, selectedDayDetails,
 }) {
   const [pendingWeek, setPendingWeek] = useState(null);
   const [labelError, setLabelError] = useState(null);
   const calendarWeeks = buildWeeks(expandedYear, calendarMonth);
   const today = new Date();
+  const todayKey = localDateKey(today);
   const showRunning = selectedTypes.includes("running");
   const showCycling = selectedTypes.includes("cycling");
   const showStrength = selectedTypes.includes("strength");
@@ -145,6 +148,12 @@ export default function MonthDayCalendar({
 
           return <Fragment key={weekKey}>
             <div id={`calendar-week-${weekKey}`} className="@container col-span-7 mt-1 scroll-mt-[calc(var(--app-safe-top,0px)+0.75rem)] min-w-0 rounded-md border border-white/10 bg-[#ffffff06] px-2.5 py-1.5 tabular-nums">
+              {showRunning && weekRuns.some((summary) => summary.runCount > 0) && (
+                <WeekHeartRateZones weekStart={weekKey} demoData={publicDemo ? demoWeekHeartRateZones(
+                  weekRuns.reduce((sum, item) => sum + item.runCount, 0),
+                  weekRuns.reduce((sum, item) => sum + item.runSeconds, 0),
+                ) : null} />
+              )}
               <div className="flex min-h-8 items-center justify-between gap-2">
                 <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)] items-baseline gap-1 text-xs font-semibold leading-tight text-[#e5ebee] @min-[535px]:flex-initial @min-[535px]:grid-cols-[9rem_7rem_7rem] @min-[535px]:text-sm">
                   <span className="whitespace-nowrap">
@@ -199,6 +208,7 @@ export default function MonthDayCalendar({
               const hasCycling = showCycling && daily.cyclingCount > 0;
               const hasStrength = showStrength && daily.strengthCount > 0;
               const dateKey = localDateKey(date);
+              const isToday = dateKey === todayKey;
               const weather = forecast?.[dateKey];
               const forecastLabel = weatherLabel(weather);
               const plan = planByDate.get(dateKey);
@@ -211,15 +221,16 @@ export default function MonthDayCalendar({
               const daySelected = selection.type === "day" && selection.year === year && selection.month === month && selection.day === day;
               return (
                 <button
-                  className={`period-cube period-day-cube relative isolate flex min-w-0 min-h-[54px] flex-col items-center justify-end px-0.5 pb-2 pt-5 border border-[color:var(--border)] rounded-[9px] bg-[color:var(--panel)] text-[color:var(--text)] text-[14px] font-semibold text-center capitalize shadow-[0_3px_9px_#00000018] [&.has-run]:border-[#e5aa62] [&.has-run]:[background:linear-gradient(145deg,_#362923,_#1d262b_82%)] [&.is-selected]:border-[color:var(--accent)] [&.is-selected]:bg-[color:var(--accent-soft)] ${outsideMonth ? "opacity-35" : ""}${hasRun ? " has-run" : ""}${daySelected ? " is-selected" : ""}`}
+                  className={`period-cube period-day-cube relative isolate flex min-w-0 min-h-[54px] flex-col items-center justify-end px-0.5 pb-2 pt-5 border border-[color:var(--border)] rounded-[9px] bg-[color:var(--panel)] text-[color:var(--text)] text-[14px] font-semibold text-center capitalize shadow-[0_3px_9px_#00000018] [&.has-run]:border-[#e5aa62] [&.has-run]:[background:linear-gradient(145deg,_#362923,_#1d262b_82%)] [&.is-selected]:border-[color:var(--accent)] [&.is-selected]:bg-[color:var(--accent-soft)] ${outsideMonth ? "opacity-35" : ""}${hasRun ? " has-run" : ""}${isToday ? " ring-1 ring-inset ring-[#ffc988]/75 [box-shadow:0_0_12px_#ffc98830]" : ""}${daySelected ? " is-selected" : ""}`}
                   type="button"
                   key={day}
+                  aria-current={isToday ? "date" : undefined}
                   title={[planLabel, forecastLabel].filter(Boolean).join(" · ") || undefined}
                   aria-label={`${day} ${monthName} ${year}${hasRun ? `, бег ${daily.runKm.toFixed(1)} км` : ""}${hasCycling ? `, велосипед ${daily.cyclingKm.toFixed(1)} км` : ""}${hasStrength ? `, силовые: ${daily.strengthCount}` : ""}${planLabel ? `, ${planLabel}` : ""}${forecastLabel ? `, ${forecastLabel}` : ""}`}
                   onClick={() => onSelectDay({ year, month, day })}
                 >
                   <span aria-hidden="true" className={`pointer-events-none absolute right-1 top-0.5 bg-gradient-to-br bg-clip-text text-[15px] font-bold leading-none text-transparent ${weekday >= 5 ? "from-[#f3bc9a]/85 to-[#f3bc9a]/25" : "from-[#c2cfd4]/75 to-[#c2cfd4]/20"}`}>
-                    {day}
+                    {isToday ? <span className="text-[#ffc988]">{day}</span> : day}
                   </span>
                   {hasRun && (
                     <span className="whitespace-nowrap text-[clamp(10px,1.35vw,16px)] font-extrabold leading-tight text-[#ffc17f]">
@@ -244,6 +255,9 @@ export default function MonthDayCalendar({
                 </button>
               );
             })}
+            {selectedDayDetails && week.days.some((date) =>
+              date.getFullYear() === selection.year && date.getMonth() === selection.month && date.getDate() === selection.day
+            ) && selectedDayDetails}
           </Fragment>;
         })}
       </div>

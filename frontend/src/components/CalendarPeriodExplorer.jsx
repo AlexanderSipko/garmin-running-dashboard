@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { readCalendarView, saveCalendarView } from "./calendarViewState";
+import MonthHeartRateZones from "./MonthHeartRateZones";
 import CombinedYearTrends from "./CombinedYearTrends";
 import {
   Activity,
@@ -38,6 +39,7 @@ function CalendarPeriodExplorer({
     yearChartData, selectionLabel, selectDay, dayActivities, dayRuns, dayPlan,
   } = useCalendarPeriod({ activities, pagePath, publicDemo, plannedSessions, deloadWeeks, viewScope });
 
+  const [monthZonesOpen, setMonthZonesOpen] = useState(false);
   const [activityReview, setActivityReview] = useState(null);
   const yearChartModeKey = `calendar-year-chart-mode:v1:${viewScope}`;
   const [combinedYear, setCombinedYear] = useState(() => readCalendarView(yearChartModeKey) === true);
@@ -428,8 +430,17 @@ function CalendarPeriodExplorer({
 
         {chartMonth != null && (
           <section className="min-w-0" aria-label="График выбранного месяца">
-            <h2 className="mb-2 text-sm font-bold capitalize">{monthNames[chartMonth]} · {chartYear}</h2>
-            <PeriodTrends data={monthChartData} periodLabel={`Дни · ${monthNames[chartMonth]} ${chartYear}`}
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-bold capitalize">{monthNames[chartMonth]} · {chartYear}</h2>
+              {showRunning && <button type="button" aria-pressed={monthZonesOpen} onClick={() => setMonthZonesOpen(!monthZonesOpen)}
+                className="min-h-9 rounded-lg border border-[#536671] px-3 text-xs font-semibold text-[#b5e6d8] hover:bg-[#293840]">
+                {monthZonesOpen ? "График тренировок" : "Зоны пульса"}
+              </button>}
+            </div>
+            {showRunning && monthZonesOpen ? (
+              <MonthHeartRateZones key={`${chartYear}-${chartMonth}`} monthStart={localDateKey(new Date(chartYear, chartMonth, 1))}
+                calendarDays={monthChartData} demo={publicDemo} />
+            ) : <PeriodTrends data={monthChartData} periodLabel={`Дни · ${monthNames[chartMonth]} ${chartYear}`}
               showRunning={showRunning} showStrength={showStrength} showCycling={showCycling}
               periodSummary={{
                 distanceKm: monthlySummary?.runKm || 0,
@@ -438,7 +449,7 @@ function CalendarPeriodExplorer({
                 cyclingKm: monthlySummary?.cyclingKm || 0,
                 strengthCount: monthlySummary?.strengthCount || 0,
               }}
-            />
+            />}
           </section>
         )}
 
@@ -458,22 +469,21 @@ function CalendarPeriodExplorer({
             onMarkDeload={onMarkDeload}
             syncBusy={busy}
             forecast={weather?.days}
-          />
-        )}
-
-        {selection.type === "day" && (
-          <div ref={linkedDetails} className="grid gap-3">
-            <SelectedDayWeather day={weather?.days?.[localDateKey(periodStart)]} />
-            {!publicDemo && <DayTrainingPlan key={localDateKey(periodStart)} date={localDateKey(periodStart)} session={dayPlan}
-              hasActivities={periodActivities.length > 0} onPlanChanged={onTrainingWeekChanged} />}
-            {(!dayPlan || dayActivities.length > 0) && (
-              <>
-                {(publicDemo || dayRuns.length > 1 || dayActivities.length === 0) && <DaySummary activities={dayRuns} date={periodStart} />}
-                {!publicDemo && <ActivityDetail date={periodStart} activities={dayActivities} detailCache={detailCache} onActivityUpdated={onActivityUpdated}
-                  onReview={coachEnabled ? (activity, onAnalysis) => setActivityReview({ activity, onAnalysis }) : undefined} />}
-              </>
+            selectedDayDetails={selection.type === "day" && (
+              <div ref={linkedDetails} className="col-span-7 min-w-0 scroll-mt-3 rounded-xl border border-[#34424a] bg-[#19242b] p-3">
+                <SelectedDayWeather day={weather?.days?.[localDateKey(periodStart)]} />
+                {!publicDemo && <DayTrainingPlan key={localDateKey(periodStart)} date={localDateKey(periodStart)} session={dayPlan}
+                  hasActivities={periodActivities.length > 0} onPlanChanged={onTrainingWeekChanged} />}
+                {(!dayPlan || dayActivities.length > 0) && (
+                  <>
+                    {(publicDemo || dayRuns.length > 1 || dayActivities.length === 0) && <DaySummary activities={dayRuns} date={periodStart} />}
+                    {!publicDemo && <ActivityDetail date={periodStart} activities={dayActivities} detailCache={detailCache} onActivityUpdated={onActivityUpdated}
+                      onReview={coachEnabled ? (activity, onAnalysis) => setActivityReview({ activity, onAnalysis }) : undefined} />}
+                  </>
+                )}
+              </div>
             )}
-          </div>
+          />
         )}
 
       </section>

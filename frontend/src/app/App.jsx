@@ -40,7 +40,7 @@ function Dashboard({ demo, account, planRevision, weather, onWeatherChange, page
           busy={dashboard.busy}
           error={dashboard.error}
           publicDemo={demo}
-          coachEnabled={Boolean(account?.ai)}
+          coachEnabled={!demo && Boolean(account?.ai)}
           syncedAt={dashboard.syncedAt}
           planRevision={planRevision}
           weather={weather}

@@ -68,9 +68,9 @@ def analyze_period(
         conversation = [
             turn for turn in history
             if turn["role"] != "assistant" or any(char.isalpha() for char in turn.get("content", ""))
-        ][-(8 if activity_id is not None else 18 if chat_summary else 20):]
+        ][-(6 if activity_id is not None else 8):]
         if chat_summary:
-            conversation = [{"role": "assistant", "content": chat_summary}, *conversation]
+            conversation = [{"role": "assistant", "content": chat_summary[:450]}, *conversation]
     elif daily:
         day_key = reference_day.isoformat()
         conversation = [
@@ -79,7 +79,7 @@ def analyze_period(
         ][-4:]
 
     activity_summary = {
-        "strength": strength_summary(selected, include_details=True),
+        "strength": strength_summary(selected, include_details=start == end and activity_id is None),
         "previous_strength": strength_summary(previous) if previous is not None else None,
         "last_sync_at": store.get("synced_at"),
     }
@@ -102,16 +102,21 @@ def analyze_period(
             "Если задания нет, оцени тренировку по её фактическим данным. Вопрос бегуна: " + question
         )
     calendar_sessions = store.get("calendar_training_sessions", {})
-    activity_summary["recent_runner_feedback"] = sorted(
-        (item for item in store.get("workout_reviews", {}).values() if item["date"] <= reference_day.isoformat()),
-        key=lambda item: item["date"], reverse=True,
-    )[:5]
+    if activity_id is not None:
+        feedback = store.get("workout_reviews", {}).get(str(activity_id))
+        if feedback:
+            activity_summary["recent_runner_feedback"] = [feedback]
+    else:
+        activity_summary["recent_runner_feedback"] = sorted(
+            (item for item in store.get("workout_reviews", {}).values() if item["date"] <= reference_day.isoformat()),
+            key=lambda item: item["date"], reverse=True,
+        )[:2]
     upcoming = [
         calendar_sessions[key]
         for key in sorted(calendar_sessions)
         if reference_day.isoformat() <= key <= (reference_day + timedelta(days=6)).isoformat()
     ]
-    if upcoming:
+    if upcoming and activity_id is None:
         activity_summary["calendar_sessions_next_7_days"] = upcoming
     if start == end:
         confirmed_weeks = [store.get("training_week_active"), *reversed(store.get("training_week_history", []))]
@@ -129,7 +134,7 @@ def analyze_period(
         activity_summary["current_month_strength"] = {
             "from": month_start.isoformat(),
             "to": reference_day.isoformat(),
-            **strength_summary(month_rows, include_details=True),
+            **strength_summary(month_rows),
         }
 
     try:

@@ -13,6 +13,19 @@ export function buildPublicDemoDashboard() {
       avg_hr_bpm: 138 + index % 19,
     };
   });
+  const sampleRuns = activities.slice(0, 16);
+  for (const [index, run] of sampleRuns.entries()) {
+    if (index % 4 === 0) activities.push({
+      id: `demo-bike-${index}`, name: "Велопрогулка", type: "cycling",
+      start_time: run.start_time.replace("07:30", "16:00"),
+      distance_meters: 15000 + index * 900, moving_duration_seconds: 3000 + index * 120,
+    });
+    if (index % 3 === 0) activities.push({
+      id: `demo-strength-${index}`, name: "Силовая тренировка", type: "strength_training",
+      start_time: run.start_time.replace("07:30", "18:00"), duration_seconds: 2700,
+    });
+  }
+  activities.sort((first, second) => second.start_time.localeCompare(first.start_time));
   const metrics = Object.fromEntries(["sleep", "hrv", "resting_hr", "stress", "weight", "vo2_max"].map((key) => [
     key,
     Array.from({ length: 28 }, (_, index) => {
@@ -24,4 +37,20 @@ export function buildPublicDemoDashboard() {
     }),
   ]));
   return { connection: { configured: false, synced_at: null }, activities, wellness: { years: [], metrics, synced_at: null, errors: {} } };
+}
+
+
+export function demoWeekHeartRateZones(runCount, seconds) {
+  return {
+    configured: true,
+    runs: runCount,
+    recorded_runs: runCount,
+    covered_seconds: seconds,
+    seconds_by_zone: Object.fromEntries([0.15, 0.56, 0.22, 0.06, 0.01].map(
+      (share, index) => [`Z${index + 1}`, seconds * share],
+    )),
+    outside_seconds: 0,
+    approximate: false,
+    missing_activity_ids: [],
+  };
 }

@@ -132,6 +132,8 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
       const weekKey = localDateKey(monday);
       return {
         label: String(day),
+        runCount: summary?.runCount || 0,
+        runSeconds: summary?.runSeconds || 0,
         weekend: weekday === 0 || weekday === 6,
         deloadWeek: deloadWeeks?.[weekKey] ? weekKey : null,
         runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,

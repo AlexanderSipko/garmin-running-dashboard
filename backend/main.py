@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from calendar import monthrange
 from contextvars import ContextVar
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from accounts import account_routes, decrypt
 from coach import RunningCoach
+from weekly_heart_rate import running_zones_for_period, weekly_running_zones
 from coach_usage import TokenUsage, record_daily_usage
 from coach_plan_dialog import TRAINING_TABLE, confirmed_plan_reply, is_plan_request, plan_move_reply
 from coach_context import is_running, strength_summary
@@ -663,6 +665,34 @@ def update_week_label(request: WeekLabelRequest) -> dict[str, Any]:
 
     update_store(update)
     return {"week_start": key, "deload": request.deload}
+
+
+@app.get("/api/dashboard/week-zones")
+def dashboard_week_zones(week_start: date) -> dict[str, Any]:
+    if week_start.weekday() != 0:
+        raise HTTPException(422, "Дата начала недели должна быть понедельником.")
+    user_id = account_id.get()
+    result = weekly_running_zones(
+        read_store(), week_start, lambda activity_id: database.read_activity_detail(user_id, activity_id),
+    )
+    if result.get("missing_activity_ids") and not database.keys(user_id)[0]:
+        result["missing_activity_ids"] = []
+    return result
+
+
+@app.get("/api/dashboard/month-zones")
+def dashboard_month_zones(month_start: date) -> dict[str, Any]:
+    if month_start.day != 1:
+        raise HTTPException(422, "Укажи первый день месяца.")
+    user_id = account_id.get()
+    month_end = month_start.replace(day=monthrange(month_start.year, month_start.month)[1])
+    result = running_zones_for_period(
+        read_store(), month_start, month_end,
+        lambda activity_id: database.read_activity_detail(user_id, activity_id), by_day=True,
+    )
+    if result.get("missing_activity_ids") and not database.keys(user_id)[0]:
+        result["missing_activity_ids"] = []
+    return result
 
 
 @app.get("/api/dashboard/wellness")
