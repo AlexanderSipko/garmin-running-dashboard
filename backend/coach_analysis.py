@@ -181,7 +181,7 @@ def analyze_period(
         elif status_code == 403:
             detail = "GigaChat запретил запрос (403). Проверь права проекта и выбранный scope."
         elif status_code == 404:
-            detail = f"GigaChat не нашёл модель {running_coach.model}. Проверь GIGACHAT_MODEL в .env."
+            detail = f"GigaChat не нашёл модель {running_coach.model}. Проверь доступ ключа к этой модели или выбери другую в настройках."
         elif status_code == 429:
             detail = "GigaChat ограничил запросы или исчерпана доступная квота. Проверь лимиты проекта."
         elif status_code == 422:

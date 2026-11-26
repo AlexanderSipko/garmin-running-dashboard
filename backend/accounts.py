@@ -13,7 +13,7 @@ from password_reset import RECOVERY_OWNER_EMAIL, RESET_TTL_SECONDS, reset_origin
 from settings import settings
 from runner_plan import RunnerPlan
 from providers.openai import OPENAI_PRESETS
-from providers.gigachat import GigaChatClient, GigaChatError
+from providers.gigachat import GIGACHAT_PRESETS, GigaChatClient, GigaChatError
 from body_measurements import add_body_measurement_routes
 from store import RegistrationLimitReached
 from weather import add_weather_routes
@@ -218,6 +218,7 @@ def account_routes(database, verify_key):
             "id": user_id, "email": email, "garmin": bool(garmin), "ai": bool(openai if provider == "openai" else ai),
             "gigachat": bool(ai), "openai": bool(openai), "coach_provider": provider,
             "coach_model_preset": preset, "gigachat_model": settings.gigachat_model,
+            "gigachat_presets": GIGACHAT_PRESETS,
             "recovery_admin": recovery_admin,
         }
 
@@ -241,7 +242,9 @@ def account_routes(database, verify_key):
         return body
 
     @router.put("/coach-provider")
-    def choose_coach_provider(request: Request, provider: Literal["gigachat", "openai", "openai-light", "openai-luna", "openai-astra"] = Body(embed=True)):
+    def choose_coach_provider(request: Request, provider: str = Body(embed=True)):
+        if provider != "gigachat" and provider not in GIGACHAT_PRESETS and provider not in OPENAI_PRESETS:
+            raise HTTPException(422, "Неизвестная модель консультанта.")
         user_id, _ = current(request)
         database.save_coach_setting(user_id, "provider", provider)
         return status(request)

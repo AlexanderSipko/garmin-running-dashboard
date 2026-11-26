@@ -34,7 +34,7 @@ class RunningCoach:
     def __init__(self, auth_key: str, provider: str = "gigachat") -> None:
         self.preset = provider
         self.provider = "openai" if provider in OPENAI_PRESETS else "gigachat"
-        self.client = OpenAIClient(auth_key, provider) if self.provider == "openai" else GigaChatClient(auth_key)
+        self.client = OpenAIClient(auth_key, provider) if self.provider == "openai" else GigaChatClient(auth_key, provider)
         self.enabled = bool(auth_key)
 
     @property
@@ -214,11 +214,18 @@ class RunningCoach:
             response = self.client.complete(messages, max_tokens, 0.2)
         answer, reason = read_answer(response)
         if (reason == "length" or not any(char.isalpha() for char in answer)) and (
-            review and self.provider == "gigachat" and monotonic() - started < 30
+            self.provider == "gigachat" and monotonic() - started < 30
         ):
+            retry_instruction = "Дай короткий законченный ответ на этот же запрос по имеющимся данным."
+            if review:
+                retry_instruction += " Если распределения пульса по зонам нет, явно скажи об этом."
+            last_message = messages[-1]
+            retry_messages = [
+                *messages[:-1],
+                {**last_message, "content": f"{last_message['content']}\n\n{retry_instruction}"},
+            ]
             final = self.client.complete(
-                [*messages, {"role": "user", "content": "Дай короткий законченный разбор по имеющимся фактам. Если распределения пульса по зонам нет, явно скажи об этом."}],
-                1000, 0.2, timeout=13, auth_timeout=5,
+                retry_messages, 1000, 0.2, timeout=13, auth_timeout=5,
             )
             answer, reason = read_answer(final)
         if reason == "length" or not any(char.isalpha() for char in answer):

@@ -114,6 +114,18 @@ function CoachProviderSetting({ account, onChange, onPlanSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  const selected = account.coach_model_preset || account.coach_provider || "gigachat";
+  const models = [
+    ["gigachat", `Сбер · ${account.gigachat_model || "GigaChat"} (по умолчанию)`],
+    ...Object.entries(account.gigachat_presets || {})
+      .filter(([preset, model]) => preset === selected || model !== account.gigachat_model)
+      .map(([preset, model]) => [preset, `Сбер · ${model}`]),
+    ["openai", "OpenAI · GPT-6.2 Sol Medium"],
+    ["openai-light", "OpenAI · GPT-6.2 Sol Light"],
+    ["openai-luna", "OpenAI · GPT-6 Luna"],
+    ["openai-astra", "OpenAI · GPT-6.2 Astra Medium"],
+  ];
+
   async function select(event) {
     const provider = event.target.value;
     setBusy(true);
@@ -141,12 +153,10 @@ function CoachProviderSetting({ account, onChange, onPlanSaved }) {
     <>
       <label className="grid gap-1.5 rounded-2xl border border-slate-700 bg-[#1b262c] p-4 text-sm">
         Модель консультанта
-        <select className={field} value={account.coach_model_preset || account.coach_provider || "gigachat"} disabled={busy} onChange={select}>
-          <option value="gigachat">Сбер · {account.gigachat_model || "GigaChat"}</option>
-          <option value="openai">OpenAI · GPT-6.2 Sol Medium</option>
-          <option value="openai-light">OpenAI · GPT-6.2 Sol Light</option>
-          <option value="openai-luna">OpenAI · GPT-6 Luna</option>
-          <option value="openai-astra">OpenAI · GPT-6.2 Astra Medium</option>
+        <select className={`${field} border-emerald-500/50`} value={selected} disabled={busy} onChange={select}>
+          {models.map(([preset, label]) => (
+            <option key={preset} value={preset}>{preset === selected ? `✓ ${label}` : label}</option>
+          ))}
         </select>
       </label>
       {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}

@@ -14,6 +14,14 @@ from settings import settings
 from coach_usage import TokenUsage
 
 
+GIGACHAT_PRESETS = {
+    "gigachat-lite": "GigaChat-2",
+    "gigachat-pro": "GigaChat-2-Pro",
+    "gigachat-max": "GigaChat-2-Max",
+    "gigachat-ultra": "GigaChat-3-Ultra",
+}
+
+
 class GigaChatError(RuntimeError):
     def __init__(self, message: str, status_code: int | None = None, code: str | None = None):
         super().__init__(message)
@@ -27,11 +35,11 @@ class GigaChatClient:
     oauth_url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     api_url = "https://api.giga.chat/v1/chat/completions"
 
-    def __init__(self, auth_key: str) -> None:
+    def __init__(self, auth_key: str, preset: str = "gigachat") -> None:
         self.auth_key = auth_key
         self.usage = TokenUsage()
         self.scope = settings.gigachat_scope
-        self.model = settings.gigachat_model
+        self.model = GIGACHAT_PRESETS.get(preset, settings.gigachat_model)
         self.ca_bundle = settings.gigachat_ca_bundle
         if not self.ca_bundle and os.environ.get("VERCEL"):
             self.ca_bundle = str(Path(__file__).with_name("certs") / "russian_trusted_root_ca_pem.crt")
@@ -106,12 +114,21 @@ class GigaChatClient:
     def complete_with_tools(self, messages, max_tokens, temperature, tools):
         functions = tools.discover()
         chat_limits = {"timeout": 13, "auth_timeout": 10}
-        try:
-            response = self.complete(messages, max_tokens, temperature, functions=functions, **chat_limits)
-        except GigaChatError as exc:
-            if exc.code != "functions_unsupported":
-                raise
+        def plain_reply():
             return self.complete(messages, max_tokens, temperature, **chat_limits)
+
+        def with_functions(turns, **options):
+            return self.complete(turns, max_tokens, temperature, functions=functions, **chat_limits, **options)
+
+        try:
+            return self._complete_tool_turn(messages, functions, tools, with_functions)
+        except GigaChatError as exc:
+            if exc.code != "functions_unsupported" and exc.status_code != 422:
+                raise
+            return plain_reply()
+
+    def _complete_tool_turn(self, messages, functions, tools, with_functions):
+        response = with_functions(messages)
         choices = response.get("choices") or []
         turn = choices[0].get("message", {}) if choices else {}
         call = turn.get("function_call")
@@ -121,7 +138,7 @@ class GigaChatClient:
         name = call.get("name")
         arguments = call.get("arguments")
         if name not in {tool["name"] for tool in functions} or not isinstance(arguments, dict):
-            return self.complete(messages, max_tokens, temperature, functions=functions, function_call="none", **chat_limits)
+            return with_functions(messages, function_call="none")
 
         try:
             result = tools.call(name, arguments)
@@ -131,14 +148,11 @@ class GigaChatClient:
         if turn.get("functions_state_id"):
             assistant_turn["functions_state_id"] = turn["functions_state_id"]
 
-        final = self.complete([
+        return with_functions([
             *messages,
             assistant_turn,
             {"role": "function", "name": name, "content": json.dumps(result, ensure_ascii=False, separators=(",", ":"))},
-        ], max_tokens, temperature, functions=functions, function_call="none", **chat_limits)
-
-
-        return final
+        ], function_call="none")
 
     def token_balance(self) -> list[dict]:
         token = self._get_access_token(timeout=10)
