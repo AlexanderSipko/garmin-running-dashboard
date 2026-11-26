@@ -13,6 +13,7 @@ from password_reset import RECOVERY_OWNER_EMAIL, RESET_TTL_SECONDS, reset_origin
 from settings import settings
 from runner_plan import RunnerPlan
 from providers.openai import OPENAI_PRESETS
+from providers.gigachat import GigaChatClient, GigaChatError
 from body_measurements import add_body_measurement_routes
 from store import RegistrationLimitReached
 from weather import add_weather_routes
@@ -240,7 +241,7 @@ def account_routes(database, verify_key):
         return body
 
     @router.put("/coach-provider")
-    def choose_coach_provider(request: Request, provider: Literal["gigachat", "openai", "openai-light", "openai-luna"] = Body(embed=True)):
+    def choose_coach_provider(request: Request, provider: Literal["gigachat", "openai", "openai-light", "openai-luna", "openai-astra"] = Body(embed=True)):
         user_id, _ = current(request)
         database.save_coach_setting(user_id, "provider", provider)
         return status(request)
@@ -271,6 +272,19 @@ def account_routes(database, verify_key):
         else:
             await verify_key(provider, value)
         return {"ok": True}
+
+    @router.get("/keys/ai/balance")
+    def gigachat_balance(request: Request):
+        user_id, _ = current(request)
+        key = decrypt(database.keys(user_id)[1])
+        if not key:
+            raise HTTPException(409, "Сначала сохрани ключ GigaChat.")
+        try:
+            return {"balances": GigaChatClient(key).token_balance()}
+        except GigaChatError as error:
+            if error.status_code == 403:
+                return {"balances": [], "unavailable": True}
+            raise HTTPException(502, "Не удалось получить остаток GigaChat. Проверь ключ и попробуй снова.") from None
 
     add_weather_routes(router, database, current)
     add_body_measurement_routes(router, database, current)

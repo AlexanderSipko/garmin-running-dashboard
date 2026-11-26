@@ -48,6 +48,8 @@ function CalendarPeriodExplorer({
     saveCalendarView(yearChartModeKey, combinedYear);
   }, [yearChartModeKey, combinedYear]);
   const showCycling = selectedTypes.includes("cycling");
+  const priorMonth = chartMonth == null ? null : new Date(chartYear, chartMonth - 1, 1);
+  const priorMonthSummary = priorMonth && monthSummaries.get(`${priorMonth.getFullYear()}-${priorMonth.getMonth()}`);
 
   return (
     <main className="period-explorer grid grid-cols-[minmax(205px,_245px)_minmax(0,_1fr)_minmax(270px,_300px)] min-h-screen max-[760px]:grid-cols-[minmax(0,_1fr)] max-[760px]:overflow-x-clip">
@@ -448,6 +450,13 @@ function CalendarPeriodExplorer({
                 heartRate: monthlySummary?.hrWeight ? Math.round(monthlySummary.hrSeconds / monthlySummary.hrWeight) : null,
                 cyclingKm: monthlySummary?.cyclingKm || 0,
                 strengthCount: monthlySummary?.strengthCount || 0,
+                previous: priorMonthSummary ? {
+                  distanceKm: priorMonthSummary.runKm,
+                  pace: averageRunningPace(priorMonthSummary),
+                  heartRate: priorMonthSummary.hrWeight ? Math.round(priorMonthSummary.hrSeconds / priorMonthSummary.hrWeight) : null,
+                  cyclingKm: priorMonthSummary.cyclingKm,
+                  strengthCount: priorMonthSummary.strengthCount,
+                } : null,
               }}
             />}
           </section>

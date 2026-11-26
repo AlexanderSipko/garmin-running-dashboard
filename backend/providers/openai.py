@@ -12,6 +12,7 @@ OPENAI_PRESETS = {
     "openai": ("gpt-6.2-sol", "medium"),
     "openai-light": ("gpt-6.2-sol", "low"),
     "openai-luna": ("gpt-6-luna", "low"),
+    "openai-astra": ("gpt-6.2-astra", "medium"),
 }
 
 

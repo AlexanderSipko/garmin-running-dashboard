@@ -74,6 +74,13 @@ export default function MonthHeartRateZones({ monthStart, calendarDays, demo }) 
     zone, color, minutes: days.reduce((sum, day) => sum + (day[zone] || 0), 0),
   }));
   const hasData = coveredMinutes > 0;
+  const segments = totals.filter(({ minutes }) => minutes > 0);
+  let offset = 0;
+  const ringStops = segments.map(({ color, minutes }) => {
+    const start = offset;
+    offset += minutes / coveredMinutes * 100;
+    return `${color} ${start}% ${offset}%`;
+  });
 
   return (
     <div className="min-w-0 rounded-xl border border-[#34424a] bg-[#19242b] p-3">
@@ -99,20 +106,38 @@ export default function MonthHeartRateZones({ monthStart, calendarDays, demo }) 
           </ResponsiveContainer>
         </div>
         <div className="mt-2 border-t border-white/10 pt-2">
-          <div className="mb-2 flex flex-wrap justify-between gap-x-2 gap-y-1 text-xs text-slate-300">
-            <span>За месяц · {durationLabel(coveredMinutes)} с пульсом</span>
-            <span className="text-slate-400">Шкала в минутах{demo ? " · пример" : ""}</span>
+          <div className="mb-3 flex flex-wrap justify-between gap-x-2 gap-y-1 text-xs">
+            <h3 className="font-semibold text-slate-200">Распределение за месяц</h3>
+            <span className="text-slate-400">Шкала графика в минутах{demo ? " · пример" : ""}</span>
           </div>
-          <dl className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
-            {totals.filter(({ zone, minutes }) => zone !== "Вне зон" || minutes > 0).map(({ zone, color, minutes }) => (
-              <div key={zone} className="min-w-0 rounded-lg bg-[#223139] px-2 py-1.5 tabular-nums">
-                <dt className="flex items-center justify-between gap-1 text-xs font-semibold" style={{ color }}>
-                  <span>{zone}</span><span>{percent.format(minutes / coveredMinutes)}</span>
-                </dt>
-                <dd className="mt-0.5 text-xs text-slate-200">{durationLabel(minutes)}</dd>
+          <div className="grid items-center gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-5">
+            <div className="relative isolate mx-auto grid size-32 shrink-0 place-items-center rounded-full"
+              style={{ background: segments.length === 1 ? segments[0].color : `conic-gradient(${ringStops.join(", ")})` }}>
+              <span aria-hidden="true" className="absolute inset-3 -z-10 rounded-full bg-[#19242b]" />
+              <div className="max-w-24 text-center leading-tight">
+                <b className="block text-sm tabular-nums text-slate-100">{durationLabel(coveredMinutes)}</b>
+                <span className="text-[10px] text-slate-400">с пульсом</span>
               </div>
-            ))}
-          </dl>
+            </div>
+            <div className="min-w-0">
+              <div aria-hidden="true" className="mb-2 flex h-3 gap-[3px] overflow-hidden rounded-md bg-[#142129]">
+                {segments.map(({ zone, color, minutes }) => (
+                  <span key={zone} className="min-w-0 rounded-sm" style={{ flex: `${minutes} 1 0px`, backgroundColor: color }} />
+                ))}
+              </div>
+              <dl className="grid grid-cols-2 gap-2 text-xs tabular-nums sm:grid-cols-3">
+                {totals.filter(({ zone, minutes }) => zone !== "Вне зон" || minutes > 0).map(({ zone, color, minutes }) => (
+                  <div key={zone} className="grid min-w-0 gap-1 rounded-md bg-[#223139] px-2 py-1.5">
+                    <dt className="flex flex-wrap items-center justify-between gap-x-1 font-semibold">
+                      <span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="size-2 rounded-sm" style={{ backgroundColor: color }} />{zone}</span>
+                      <span style={{ color }}>{percent.format(minutes / coveredMinutes)}</span>
+                    </dt>
+                    <dd className="whitespace-nowrap text-slate-200">{durationLabel(minutes)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </div>
         </div>
       </>}
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-300">

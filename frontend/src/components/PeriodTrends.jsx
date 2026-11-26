@@ -1,4 +1,4 @@
-import { Bike, Dumbbell, Footprints, Gauge, HeartPulse } from "lucide-react";
+import { ArrowDown, ArrowUp, Minus, Bike, Dumbbell, Footprints, Gauge, HeartPulse } from "lucide-react";
 import {
   Area,
   Bar,
@@ -131,6 +131,24 @@ function MonthAxisTick({ x, y, payload, days }) {
   );
 }
 
+function MonthChange({ value, previous, type }) {
+  if (value == null || previous == null) return null;
+  const delta = type === "km" ? Math.round((value - previous) * 10) / 10 : Math.round(value) - Math.round(previous);
+  const amount = Math.abs(delta);
+  const formatted = type === "pace" ? (amount ? `${fmtPace(amount)} /км` : "0:00 /км")
+    : type === "km" ? `${amount.toFixed(1)} км`
+    : type === "pulse" ? `${amount} уд/мин` : String(amount);
+  const Icon = delta > 0 ? ArrowUp : delta < 0 ? ArrowDown : Minus;
+  const positive = type === "pace" || type === "pulse" ? delta < 0 : delta > 0;
+  const color = delta === 0 ? "text-slate-400" : positive ? "text-emerald-300" : "text-rose-300";
+  return (
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-black/15 px-1.5 py-0.5 text-xs font-semibold ${color}`}
+      title="Изменение к предыдущему календарному месяцу">
+      <Icon size={12} aria-hidden="true" />{delta > 0 ? "+" : delta < 0 ? "−" : ""}{formatted}
+    </span>
+  );
+}
+
 function PeriodTrends({ data, periodLabel, showRunning, showStrength, showCycling, periodSummary }) {
   const isDailyChart = periodLabel.startsWith("Дни ·");
   const days = isDailyChart ? new Map(data.map((point) => [point.label, point])) : null;
@@ -151,13 +169,13 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, showCyclin
   if (isDailyChart && periodSummary) {
     if (showRunning) {
       monthMetrics.push(
-        ["За месяц", `${periodSummary.distanceKm.toFixed(1)} км`],
-        ["Средний темп", periodSummary.pace == null ? "—" : `${fmtPace(periodSummary.pace)} /км`],
-        ["Средний пульс", periodSummary.heartRate == null ? "—" : `${periodSummary.heartRate} bpm`],
+        ["За месяц", `${periodSummary.distanceKm.toFixed(1)} км`, "distanceKm", "km"],
+        ["Средний темп", periodSummary.pace == null ? "—" : `${fmtPace(periodSummary.pace)} /км`, "pace", "pace"],
+        ["Средний пульс", periodSummary.heartRate == null ? "—" : `${periodSummary.heartRate} bpm`, "heartRate", "pulse"],
       );
     }
-    if (showCycling) monthMetrics.push(["Велосипед за месяц", `${periodSummary.cyclingKm.toFixed(1)} км`]);
-    if (showStrength) monthMetrics.push(["Силовые", String(periodSummary.strengthCount)]);
+    if (showCycling) monthMetrics.push(["Велосипед за месяц", `${periodSummary.cyclingKm.toFixed(1)} км`, "cyclingKm", "km"]);
+    if (showStrength) monthMetrics.push(["Силовые", String(periodSummary.strengthCount), "strengthCount", "count"]);
   }
 
   return (
@@ -209,11 +227,14 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, showCyclin
       )}
 
       {monthMetrics.length > 0 && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Итоги выбранного месяца">
-          {monthMetrics.map(([label, value]) => (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(145px,1fr))]" aria-label="Итоги выбранного месяца">
+          {monthMetrics.map(([label, value, key, type]) => (
             <div className="rounded-lg border border-[#34424a] bg-[#202a30] px-3 py-2.5" key={label}>
               <span className="block text-[12px] text-[#aebbc0]">{label}</span>
-              <b className="mt-1 block text-[18px] font-bold text-[#e5ebee]">{value}</b>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <b className="text-[18px] font-bold text-[#e5ebee]">{value}</b>
+                <MonthChange value={periodSummary[key]} previous={periodSummary.previous?.[key]} type={type} />
+              </div>
             </div>
           ))}
         </div>

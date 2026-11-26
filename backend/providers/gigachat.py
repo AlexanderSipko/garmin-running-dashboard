@@ -140,6 +140,21 @@ class GigaChatClient:
 
         return final
 
+    def token_balance(self) -> list[dict]:
+        token = self._get_access_token(timeout=10)
+        try:
+            response = httpx.get(
+                self.api_url.rsplit("/", 2)[0] + "/balance",
+                headers={"Authorization": f"Bearer {token}", "User-Agent": "GarminRunningDashboard"},
+                timeout=10, verify=self.verify,
+            )
+            if not response.is_success:
+                raise self._response_error(response)
+            rows = response.json()["balance"]
+            return [{"name": str(row["usage"]), "tokens": int(row["value"])} for row in rows]
+        except (httpx.HTTPError, ValueError, TypeError, KeyError):
+            raise GigaChatError("Unable to read token balance") from None
+
     def check_credentials(self) -> None:
         self._get_access_token()
 

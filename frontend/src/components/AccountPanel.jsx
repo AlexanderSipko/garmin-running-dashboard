@@ -76,6 +76,40 @@ function KeySetting({ provider, label, configured, onChange }) {
   );
 }
 
+function GigachatBalance() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  async function refresh() {
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      setResult(await accountRequest("/keys/ai/balance"));
+    } catch (failure) {
+      setError(failure.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-2 px-1 text-xs text-slate-300">
+      <button type="button" disabled={busy} onClick={refresh} className={`${button} w-fit`}>
+        {busy ? "Проверяю остаток…" : "Проверить остаток токенов"}
+      </button>
+      {result?.balances.length > 0 && <ul className="grid gap-1">
+        {result.balances.map(({ name, tokens }, index) => (
+          <li key={`${name}-${index}`}>{name} · {tokens.toLocaleString("ru-RU")} токенов</li>
+        ))}
+      </ul>}
+      {result?.balances.length === 0 && <p>GigaChat не вернул остаток пакета для этого ключа.</p>}
+      {error && <p role="alert" className="text-rose-300">{error}</p>}
+    </div>
+  );
+}
+
 function CoachProviderSetting({ account, onChange, onPlanSaved }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -112,13 +146,17 @@ function CoachProviderSetting({ account, onChange, onPlanSaved }) {
           <option value="openai">OpenAI · GPT-6.2 Sol Medium</option>
           <option value="openai-light">OpenAI · GPT-6.2 Sol Light</option>
           <option value="openai-luna">OpenAI · GPT-6 Luna</option>
+          <option value="openai-astra">OpenAI · GPT-6.2 Astra Medium</option>
         </select>
       </label>
       {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
       <KeySetting provider="ai" label="Ключ GigaChat" configured={account.gigachat ?? account.ai}
         onChange={(configured) => keyChanged("gigachat", configured)} />
+      {(account.gigachat ?? account.ai) && <GigachatBalance />}
       <KeySetting provider="openai" label="Ключ OpenAI API" configured={account.openai}
         onChange={(configured) => keyChanged("openai", configured)} />
+      {account.openai && <a href="https://platform.openai.com/usage" target="_blank" rel="noreferrer"
+        className="w-fit px-1 text-xs text-[#ffc988] underline">Расход и бюджет в OpenAI</a>}
     </>
   );
 }
