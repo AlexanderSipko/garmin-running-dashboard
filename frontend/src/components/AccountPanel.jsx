@@ -268,7 +268,7 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
       </nav>
       <dialog ref={dialog} aria-labelledby="auth-title"
         onCancel={(event) => { event.preventDefault(); if (!busy) open(null); }}
-        className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[420px] overflow-y-auto rounded-3xl border border-[#415157] bg-[#1b262c] p-0 text-slate-100 shadow-2xl backdrop:bg-[#091014]/80 backdrop:backdrop-blur-sm">
+        className="m-auto [--dialog-vertical-gap:2rem] max-h-[calc(100dvh-var(--dialog-vertical-gap))] w-[calc(100%-2rem)] max-w-[420px] overflow-y-auto rounded-3xl border border-[#415157] bg-[#1b262c] p-0 text-slate-100 shadow-2xl backdrop:bg-[#091014]/80 backdrop:backdrop-blur-sm">
         {authOpen && <div className="relative bg-[radial-gradient(ellipse_at_top_left,#72533148,transparent_62%)] p-6 sm:p-8">
           <button type="button" aria-label="Закрыть" disabled={busy} onClick={() => open(null)}
             className="absolute right-4 top-4 rounded-full p-2 text-slate-300 hover:bg-white/10">
@@ -317,7 +317,7 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
       </dialog>
       <dialog ref={settingsDialog} aria-labelledby="settings-title"
         onCancel={(event) => { event.preventDefault(); open(null); }}
-        className="m-auto max-h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] max-w-[900px] overflow-y-auto overscroll-contain rounded-2xl border border-[#415157] bg-[#162128] p-0 text-slate-100 shadow-2xl backdrop:bg-[#091014]/80 backdrop:backdrop-blur-sm sm:rounded-3xl">
+        className="m-auto [--dialog-vertical-gap:1.5rem] max-h-[calc(100dvh-var(--dialog-vertical-gap))] w-[calc(100%-1.5rem)] max-w-[900px] overflow-y-auto overscroll-contain rounded-2xl border border-[#415157] bg-[#162128] p-0 text-slate-100 shadow-2xl backdrop:bg-[#091014]/80 backdrop:backdrop-blur-sm sm:rounded-3xl">
         {settingsOpen && (
           <>
             <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-[#415157] bg-[#1d2a31] px-4 py-3 sm:px-6 sm:py-4">

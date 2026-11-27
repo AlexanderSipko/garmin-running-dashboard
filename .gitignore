@@ -21,3 +21,10 @@ test-results/
 
 .venv/
 /data/
+
+# Local Garmin Trainer agent context
+/AGENTS.md
+/PROJECT_STATE.md
+/ARCHITECTURE.md
+/TASKS.md
+/DECISIONS.md

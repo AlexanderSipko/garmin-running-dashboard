@@ -19,7 +19,15 @@
   }
 
   :root[data-telegram-mini-app="true"] {
-    --app-safe-top: max(var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px));
+    --app-safe-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
     --app-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px));
   }
+}
+
+/* Modal dialogs use the viewport, outside the dashboard's safe-area padding. */
+:root[data-telegram-mini-app="true"] dialog:modal {
+  position: fixed;
+  top: var(--app-safe-top);
+  bottom: var(--app-safe-bottom);
+  max-height: calc(100dvh - var(--app-safe-top) - var(--app-safe-bottom) - var(--dialog-vertical-gap, 0px));
 }
