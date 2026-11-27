@@ -110,10 +110,7 @@ function GigachatBalance() {
   );
 }
 
-function CoachProviderSetting({ account, onChange, onPlanSaved }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
+function coachModelChoices(account) {
   const selected = account.coach_model_preset || account.coach_provider || "gigachat";
   const models = [
     ["gigachat", `Сбер · ${account.gigachat_model || "GigaChat"} (по умолчанию)`],
@@ -125,6 +122,18 @@ function CoachProviderSetting({ account, onChange, onPlanSaved }) {
     ["openai-luna", "OpenAI · GPT-6 Luna"],
     ["openai-astra", "OpenAI · GPT-6.2 Astra Medium"],
   ];
+  return { selected, models };
+}
+
+export function selectedCoachModelLabel(account) {
+  const { selected, models } = coachModelChoices(account);
+  return models.find(([preset]) => preset === selected)?.[1] ?? "";
+}
+
+function CoachProviderSetting({ account, onChange, onPlanSaved }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const { selected, models } = coachModelChoices(account);
 
   async function select(event) {
     const provider = event.target.value;

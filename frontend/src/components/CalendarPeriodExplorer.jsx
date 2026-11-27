@@ -26,7 +26,7 @@ import PeriodTrends from "./PeriodTrends";
 import { monthNames, monthShortNames, useCalendarPeriod } from "./useCalendarPeriod";
 
 function CalendarPeriodExplorer({
-  activities, pagePath, viewScope, busy, error, onActivityUpdated, publicDemo, coachEnabled, syncedAt, wellness,
+  activities, pagePath, viewScope, busy, error, onActivityUpdated, publicDemo, coachEnabled, coachModelLabel, syncedAt, wellness,
   planRevision, weather, weatherRequest, onWeatherChange, deloadWeeks, weeklyVolume, plannedSessions, onTrainingWeekChanged, onMarkDeload,
 }) {
   const {
@@ -171,6 +171,7 @@ function CalendarPeriodExplorer({
             {coachEnabled && <RunningCoachPanel
               key={planRevision}
               activityReview={activityReview}
+              modelLabel={coachModelLabel}
               viewScope={viewScope}
               period={selection.type}
               periodStart={periodStart}

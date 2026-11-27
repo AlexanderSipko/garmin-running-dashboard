@@ -1,6 +1,6 @@
 import DashboardFooter from "./DashboardFooter";
 import { useEffect, useState } from "react";
-import AccountPanel, { accountRequest } from "../components/AccountPanel";
+import AccountPanel, { accountRequest, selectedCoachModelLabel } from "../components/AccountPanel";
 import { ConnectionGuide, DemoIntro } from "../components/DemoGuide";
 import BodyMeasurements from "../components/BodyMeasurements";
 import WorkoutHistory from "../components/WorkoutHistory";
@@ -15,6 +15,7 @@ const theme = "[background:var(--bg)] text-[color:var(--text)] [--bg:#141b20] [-
 
 function Dashboard({ demo, account, planRevision, weather, onWeatherChange, pagePath }) {
   const dashboard = useGarminDashboard(demo);
+  const coachEnabled = !demo && Boolean(account?.ai);
 
   let content;
   if (pagePath === measurementsPath) {
@@ -40,7 +41,8 @@ function Dashboard({ demo, account, planRevision, weather, onWeatherChange, page
           busy={dashboard.busy}
           error={dashboard.error}
           publicDemo={demo}
-          coachEnabled={!demo && Boolean(account?.ai)}
+          coachEnabled={coachEnabled}
+          coachModelLabel={coachEnabled ? selectedCoachModelLabel(account) : ""}
           syncedAt={dashboard.syncedAt}
           planRevision={planRevision}
           weather={weather}

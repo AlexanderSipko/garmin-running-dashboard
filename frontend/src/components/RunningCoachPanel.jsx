@@ -159,7 +159,7 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
   );
 }
 
-export default function RunningCoachPanel({ period, periodStart, periodEnd, label, syncedAt, onTrainingWeekChanged, activityReview, viewScope }) {
+export default function RunningCoachPanel({ period, periodStart, periodEnd, label, syncedAt, onTrainingWeekChanged, activityReview, viewScope, modelLabel }) {
   const modal = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
   const [opened, setOpened] = useState(false);
@@ -199,7 +199,13 @@ export default function RunningCoachPanel({ period, periodStart, periodEnd, labe
         className={`overflow-hidden border border-[#3b4a50] bg-[#202c31] p-0 text-slate-100 shadow-2xl backdrop:bg-[#0b1116]/80 max-[760px]:fixed max-[760px]:inset-0 max-[760px]:m-0 max-[760px]:h-dvh max-[760px]:max-h-none max-[760px]:w-screen max-[760px]:max-w-none max-[760px]:rounded-none ${expanded ? "fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none" : "m-auto h-[min(82dvh,740px)] w-[min(760px,calc(100%-2rem))] max-w-none rounded-2xl"}`}>
         <div className="flex h-full min-h-0 flex-col">
           <header className="flex items-center justify-between gap-2 border-b border-[#3b4a50] px-4 py-3">
-            <h2 id="consultation-title" className="flex items-center gap-2 text-base font-bold"><ScanLine size={17} /> Консультация и анализ</h2>
+            <div className="flex min-w-0 items-center gap-2">
+              <ScanLine size={17} className="shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <h2 id="consultation-title" className="text-base font-bold">Консультация и анализ</h2>
+                {modelLabel && <p className="mt-0.5 break-words text-xs text-[#f3bc7f]">{modelLabel}</p>}
+              </div>
+            </div>
             <div className="flex shrink-0 gap-1">
               <button type="button" onClick={() => setExpanded(!expanded)} aria-label={expanded ? "Уменьшить окно" : "Развернуть на весь экран"}
                 className="grid size-10 place-items-center rounded-lg hover:bg-white/10 max-[760px]:hidden">
