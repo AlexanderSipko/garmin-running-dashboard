@@ -488,6 +488,7 @@ function CalendarPeriodExplorer({
                   <>
                     {(publicDemo || dayRuns.length > 1 || dayActivities.length === 0) && <DaySummary activities={dayRuns} date={periodStart} />}
                     {!publicDemo && <ActivityDetail date={periodStart} activities={dayActivities} detailCache={detailCache} onActivityUpdated={onActivityUpdated}
+                      coachModelLabel={coachModelLabel}
                       onReview={coachEnabled ? (activity, onAnalysis) => setActivityReview({ activity, onAnalysis }) : undefined} />}
                   </>
                 )}

@@ -3,14 +3,16 @@ import { ScanLine, Trash2 } from "lucide-react";
 
 const dateLabel = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
 
-export default function ActivityCoachAnalysis({ activity, onReview }) {
+export default function ActivityCoachAnalysis({ activity, onReview, modelLabel, readOnlySaved = false }) {
   const [analysis, setAnalysis] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
-  const path = `/api/coach/activity-analysis/${activity.id}`;
+  const activityId = String(activity.id);
+  const path = /^[1-9]\d*$/.test(activityId) ? `/api/coach/activity-analysis/${activityId}` : null;
 
   useEffect(() => {
+    if (!path) return;
     const controller = new AbortController();
     fetch(path, { signal: controller.signal })
       .then((response) => {
@@ -38,7 +40,7 @@ export default function ActivityCoachAnalysis({ activity, onReview }) {
     }
   }
 
-  if (!analysis && !onReview && !error) return null;
+  if (!path || (!analysis && !onReview && !error)) return null;
 
   return (
     <section className="mt-3 grid gap-2 rounded-xl border border-[#415157] bg-[#1b282f] p-3">
@@ -46,7 +48,7 @@ export default function ActivityCoachAnalysis({ activity, onReview }) {
         <h3 className="flex items-center gap-2 text-sm font-bold text-[#f3bc7f]">
           <ScanLine size={16} aria-hidden="true" /> Разбор ИИ
         </h3>
-        {analysis && <button type="button" disabled={deleting} title="Удалить разбор" aria-label="Удалить сохранённый разбор"
+        {analysis && !readOnlySaved && <button type="button" disabled={deleting} title="Удалить разбор" aria-label="Удалить сохранённый разбор"
           onClick={remove} className="grid size-9 place-items-center rounded-lg border border-rose-300/30 text-rose-300 hover:bg-rose-400/15 disabled:opacity-50">
           <Trash2 size={15} aria-hidden="true" />
         </button>}
@@ -59,11 +61,16 @@ export default function ActivityCoachAnalysis({ activity, onReview }) {
         <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{analysis.answer}</p>
       </>}
       {error && <p role="alert" className="text-xs text-rose-300">{error}</p>}
-      {onReview && <button type="button" aria-haspopup="dialog" disabled={loading || deleting}
-        onClick={() => { setError(""); onReview(activity, setAnalysis); }}
-        className="min-h-10 w-fit rounded-lg border border-[#6f5540] bg-[#302820] px-3 text-sm font-semibold text-[#f3bc7f] hover:bg-[#413426] disabled:opacity-50">
-        {analysis ? "Проанализировать заново" : "Разобрать тренировку"}
-      </button>}
+      {onReview && (!analysis || !readOnlySaved) && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <button type="button" aria-haspopup="dialog" disabled={loading || deleting}
+            onClick={() => { setError(""); onReview(activity, setAnalysis); }}
+            className="min-h-10 w-fit rounded-lg border border-[#6f5540] bg-[#302820] px-3 text-sm font-semibold text-[#f3bc7f] hover:bg-[#413426] disabled:opacity-50">
+            {analysis ? "Проанализировать заново" : "Разобрать тренировку"}
+          </button>
+          {modelLabel && <small className="min-w-0 break-words text-xs text-[#f3bc7f]">{modelLabel}</small>}
+        </div>
+      )}
     </section>
   );
 }

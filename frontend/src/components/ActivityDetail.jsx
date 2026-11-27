@@ -9,7 +9,7 @@ import StrengthActivity from "./StrengthActivity";
 import ActivityRouteMap from "./ActivityRouteMap";
 import ActivityTrackCharts from "./ActivityTrackCharts";
 
-function ActivityDetail({ date, activities, detailCache, onActivityUpdated, onReview }) {
+function ActivityDetail({ date, activities, detailCache, onActivityUpdated, onReview, coachModelLabel }) {
   return (
     <section className="activity-detail pt-[15px] px-0 pb-0 mt-[14px] [border-top:1px_solid_var(--border)]">
       <div className="activity-detail-heading flex items-center justify-between gap-[14px] [&_h3]:mt-1 mx-0 mb-3 [&_h3]:[font:600_14px_Manrope,_sans-serif] [&_h3]:capitalize">
@@ -31,9 +31,7 @@ function ActivityDetail({ date, activities, detailCache, onActivityUpdated, onRe
             {getActivityCategory(activity) === "strength"
               ? <StrengthActivity activity={activity} onActivityUpdated={onActivityUpdated} />
               : <ActivitySummary activity={activity} detailCache={detailCache} onActivityUpdated={onActivityUpdated} />}
-            {/^[1-9]\d*$/.test(String(activity.id)) && (
-              <ActivityCoachAnalysis activity={activity} onReview={onReview} />
-            )}
+            <ActivityCoachAnalysis activity={activity} onReview={onReview} modelLabel={coachModelLabel} />
           </div>
         ))
       ) : (

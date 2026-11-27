@@ -3,7 +3,9 @@ import { ArrowUpRight, Bike, ChevronDown, Copy, Dumbbell, Footprints } from "luc
 import { getActivityCategory, getActivityDate } from "../lib/calendarAnalytics";
 import { fmtDuration } from "../lib/format";
 import { PageLink } from "../app/DashboardRouter";
+import ActivityCoachAnalysis from "./ActivityCoachAnalysis";
 import RefreshActivityButton from "./RefreshActivityButton";
+import RunningCoachPanel from "./RunningCoachPanel";
 import { copyText } from "../lib/copyText";
 import { dayPath } from "../lib/dashboardRoutes";
 
@@ -13,7 +15,7 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "lo
 const kmFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
 const control = "rounded-lg border border-[#42535b] px-3 py-2 text-sm font-semibold hover:bg-[#283740]";
 
-function Description({ activity, strength, demo, onActivityUpdated }) {
+function Description({ activity, strength, demo, onActivityUpdated, onReview, coachModelLabel }) {
   const [notice, setNotice] = useState("");
   const [manualCopy, setManualCopy] = useState(false);
   const text = activity.description?.trim() || "";
@@ -51,15 +53,18 @@ function Description({ activity, strength, demo, onActivityUpdated }) {
         </PageLink>
       </div>
       {notice && <p role="status" className="text-slate-300">{notice}</p>}
+      {!demo && <ActivityCoachAnalysis activity={activity} onReview={onReview} modelLabel={coachModelLabel} readOnlySaved />}
     </div>
   );
 }
 
-export default function WorkoutHistory({ activities, loading, error, demo, onActivityUpdated }) {
+export default function WorkoutHistory({ activities, loading, error, demo, onActivityUpdated,
+  coachEnabled, coachModelLabel, viewScope, syncedAt, planRevision, onTrainingWeekChanged }) {
   const [filter, setFilter] = useState("all");
   const [year, setYear] = useState("all");
   const [limit, setLimit] = useState(pageSize);
   const [expanded, setExpanded] = useState(null);
+  const [activityReview, setActivityReview] = useState(null);
   const rows = useMemo(() => activities.flatMap((activity, index) => {
     const category = getActivityCategory(activity);
     const date = getActivityDate(activity);
@@ -69,6 +74,11 @@ export default function WorkoutHistory({ activities, loading, error, demo, onAct
   const years = Array.from(new Set(rows.map(({ date }) => date.getFullYear())));
   const visible = rows.filter(({ category, date }) => (filter === "all" || category === filter)
     && (year === "all" || String(date.getFullYear()) === year));
+  const reviewDate = activityReview ? getActivityDate(activityReview.activity) : new Date();
+
+  function reviewActivity(activity, onAnalysis) {
+    setActivityReview({ activity, onAnalysis });
+  }
 
   function setView(update, value) {
     update(value);
@@ -116,12 +126,17 @@ export default function WorkoutHistory({ activities, loading, error, demo, onAct
                 </span>
                 <ChevronDown size={17} aria-hidden="true" className={open ? "shrink-0 rotate-180" : "shrink-0"} />
               </button>
-              {open && <Description activity={activity} strength={strength} demo={demo} onActivityUpdated={onActivityUpdated} />}
+              {open && <Description activity={activity} strength={strength} demo={demo} onActivityUpdated={onActivityUpdated}
+                onReview={coachEnabled ? reviewActivity : undefined} coachModelLabel={coachModelLabel} />}
             </li>
           );
         })}
       </ul>
       {visible.length > limit && <button type="button" className={`${control} w-fit`} onClick={() => setLimit((value) => value + pageSize)}>Показать ещё</button>}
+      {coachEnabled && <RunningCoachPanel key={planRevision} activityReview={activityReview} onClose={() => setActivityReview(null)}
+        showOpenButtons={false} modelLabel={coachModelLabel} viewScope={viewScope} period="day"
+        periodStart={reviewDate} periodEnd={reviewDate} label={dateFormat.format(reviewDate)} syncedAt={syncedAt}
+        onTrainingWeekChanged={onTrainingWeekChanged} />}
     </main>
   );
 }

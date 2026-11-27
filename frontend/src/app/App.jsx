@@ -16,13 +16,17 @@ const theme = "[background:var(--bg)] text-[color:var(--text)] [--bg:#141b20] [-
 function Dashboard({ demo, account, planRevision, weather, onWeatherChange, pagePath }) {
   const dashboard = useGarminDashboard(demo);
   const coachEnabled = !demo && Boolean(account?.ai);
+  const coachModelLabel = coachEnabled ? selectedCoachModelLabel(account) : "";
+  const viewScope = account?.id ?? "demo";
 
   let content;
   if (pagePath === measurementsPath) {
     content = <BodyMeasurements account={account} request={accountRequest} />;
   } else if (pagePath === workoutsPath) {
     content = <WorkoutHistory activities={dashboard.activities} loading={dashboard.loading} error={dashboard.error} demo={demo}
-      onActivityUpdated={dashboard.replaceActivity} />;
+      onActivityUpdated={dashboard.replaceActivity} coachEnabled={coachEnabled} coachModelLabel={coachModelLabel}
+      viewScope={viewScope} syncedAt={dashboard.syncedAt} planRevision={planRevision}
+      onTrainingWeekChanged={dashboard.replaceTrainingWeek} />;
   } else if (dashboard.loading) {
     content = <p role="status" className="mx-auto max-w-4xl px-4 py-8 text-sm text-slate-300">Загружаю личные данные…</p>;
   } else {
@@ -36,13 +40,13 @@ function Dashboard({ demo, account, planRevision, weather, onWeatherChange, page
           key={pagePath}
           activities={dashboard.activities}
           pagePath={pagePath}
-          viewScope={account?.id ?? "demo"}
+          viewScope={viewScope}
           onActivityUpdated={dashboard.replaceActivity}
           busy={dashboard.busy}
           error={dashboard.error}
           publicDemo={demo}
           coachEnabled={coachEnabled}
-          coachModelLabel={coachEnabled ? selectedCoachModelLabel(account) : ""}
+          coachModelLabel={coachModelLabel}
           syncedAt={dashboard.syncedAt}
           planRevision={planRevision}
           weather={weather}
