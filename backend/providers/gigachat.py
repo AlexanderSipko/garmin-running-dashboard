@@ -12,11 +12,10 @@ from typing import Any
 import httpx
 from settings import settings
 from coach_usage import TokenUsage
+from coach_presets import DEFAULT_GIGACHAT_PRESET, normalize_coach_preset
 
 
 GIGACHAT_PRESETS = {
-    "gigachat-lite": "GigaChat-2",
-    "gigachat-pro": "GigaChat-2-Pro",
     "gigachat-max": "GigaChat-2-Max",
     "gigachat-ultra": "GigaChat-3-Ultra",
 }
@@ -35,11 +34,11 @@ class GigaChatClient:
     oauth_url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     api_url = "https://api.giga.chat/v1/chat/completions"
 
-    def __init__(self, auth_key: str, preset: str = "gigachat") -> None:
+    def __init__(self, auth_key: str, preset: str = DEFAULT_GIGACHAT_PRESET) -> None:
         self.auth_key = auth_key
         self.usage = TokenUsage()
         self.scope = settings.gigachat_scope
-        self.model = GIGACHAT_PRESETS.get(preset, settings.gigachat_model)
+        self.model = GIGACHAT_PRESETS.get(normalize_coach_preset(preset), GIGACHAT_PRESETS[DEFAULT_GIGACHAT_PRESET])
         self.ca_bundle = settings.gigachat_ca_bundle
         if not self.ca_bundle and os.environ.get("VERCEL"):
             self.ca_bundle = str(Path(__file__).with_name("certs") / "russian_trusted_root_ca_pem.crt")

@@ -113,16 +113,15 @@ function GigachatBalance() {
 }
 
 function coachModelChoices(account) {
-  const selected = account.coach_model_preset || account.coach_provider || "gigachat";
+  const saved = account.coach_model_preset || account.coach_provider || "gigachat";
+  const selected = saved === "openai" || saved === "openai-astra" ? "openai-light"
+    : ["gigachat", "gigachat-lite", "gigachat-pro"].includes(saved) ? "gigachat-max" : saved;
   const models = [
-    ["gigachat", `Сбер · ${account.gigachat_model || "GigaChat"} (по умолчанию)`],
     ...Object.entries(account.gigachat_presets || {})
-      .filter(([preset, model]) => preset === selected || model !== account.gigachat_model)
+      .filter(([preset]) => preset === "gigachat-max" || preset === "gigachat-ultra")
       .map(([preset, model]) => [preset, `Сбер · ${model}`]),
-    ["openai", "OpenAI · GPT-6.2 Sol Medium"],
-    ["openai-light", "OpenAI · GPT-6.2 Sol Light"],
+    ["openai-light", "OpenAI · GPT-6.2 Sol"],
     ["openai-luna", "OpenAI · GPT-6 Luna"],
-    ["openai-astra", "OpenAI · GPT-6.2 Astra Medium"],
   ];
   return { selected, models };
 }

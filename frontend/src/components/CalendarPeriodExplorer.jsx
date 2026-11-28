@@ -11,6 +11,7 @@ import {
   Footprints,
   Gauge,
   HeartPulse,
+  Zap,
 } from "lucide-react";
 import { localDateKey } from "../lib/wellnessDates";
 import { fmtPace } from "../lib/format";
@@ -365,8 +366,9 @@ function CalendarPeriodExplorer({
                 && selection.type !== "year";
               const averageHr = summary.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null;
               const pace = averageRunningPace(summary);
+              const averagePower = averageRunningPower([summary]);
               const monthLabel = showRunning
-                ? `${monthName} ${expandedYear}: ${summary.runKm.toFixed(1)} км, ${averageHr || "нет данных о пульсе"} bpm, темп ${fmtPace(pace)}`
+                ? `${monthName} ${expandedYear}: ${summary.runKm.toFixed(1)} км, ${averageHr || "нет данных о пульсе"} bpm, темп ${fmtPace(pace)}${averagePower == null ? "" : `, средняя мощность ${averagePower} Вт`}`
                 : showStrength
                   ? `${monthName} ${expandedYear}: ${summary.strengthCount} силовых тренировок`
                   : `${monthName} ${expandedYear}`;
@@ -414,6 +416,12 @@ function CalendarPeriodExplorer({
                           {averageHr ?? "—"}
                         </span>
                       </span>
+                      {averagePower != null && (
+                        <span className="inline-flex min-w-0 items-center justify-center gap-0.5 whitespace-nowrap text-[10px] font-semibold text-[#ffc988]">
+                          <Zap size={11} className="shrink-0" aria-hidden="true" />
+                          {averagePower} Вт
+                        </span>
+                      )}
                     </span>
                   ) : showStrength ? (
                     <span className={[

@@ -145,6 +145,7 @@ def daily_coach_context(store: dict[str, Any], day: date) -> dict[str, Any]:
                 "km": round(float(item["distance_meters"]) / 1000, 2) if item.get("distance_meters") else None,
                 "pace": activity_pace(item) if is_running(item) else None,
                 "avg_bpm": item.get("avg_hr_bpm"),
+                **({"running_power": item["running_power"]} if is_running(item) and item.get("running_power") else {}),
                 "duration_seconds": item.get("moving_duration_seconds") or item.get("duration_seconds"),
             }
             for item in today_rows[:8]

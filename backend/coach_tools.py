@@ -73,6 +73,7 @@ class GarminCoachTools:
                 workouts = days.setdefault(day.isoformat(), {}).setdefault("workouts", [])
                 if len(workouts) >= 5:
                     continue
+                power = activity.get("running_power") if activity_kind(activity) == "run" else None
                 workouts.append({
                     "id": activity.get("id"),
                     "name": str(activity.get("name") or "")[:70],
@@ -80,6 +81,7 @@ class GarminCoachTools:
                     "km": round(float(activity.get("distance_meters") or 0) / 1000, 2),
                     "pace": activity_pace(activity),
                     "avg_bpm": activity.get("avg_hr_bpm"),
+                    **({"average_power_watts": power["average_watts"]} if power else {}),
                 })
 
             return {

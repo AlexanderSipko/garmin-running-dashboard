@@ -30,7 +30,8 @@ from coach_memory import MEMORY_LIMITS, memory_state, wants_memory_display
 from coach_tools import GarminCoachTools
 from coach_analysis import analyze_period as run_period_analysis
 from dashboard_data import build_dashboard, dashboard_weekly_volume, merge_activities, monday_of, parse_date
-from providers.gigachat import GigaChatClient
+from providers.gigachat import GIGACHAT_PRESETS, GigaChatClient
+from coach_presets import DEFAULT_GIGACHAT_PRESET, DEFAULT_OPENAI_PRESET, normalize_coach_preset
 from providers.openai import OPENAI_PRESETS, OpenAIClient
 from request_security import check_origin, validation_error
 from settings import settings
@@ -43,7 +44,7 @@ from training_week import (
 
 database = Database(settings.database_url, settings.sqlite_path)
 logger = logging.getLogger(__name__)
-COACH_CONTEXT_VERSION = 9
+COACH_CONTEXT_VERSION = 10
 COACH_CHAT_TURNS = 60
 
 
@@ -96,6 +97,7 @@ def update_store(update: Callable[[dict[str, Any]], None]) -> None:
 def personal_coach() -> RunningCoach:
     user_id = account_id.get()
     provider, openai_key = database.coach_settings(user_id)
+    provider = normalize_coach_preset(provider)
     encrypted = openai_key if provider in OPENAI_PRESETS else database.keys(user_id)[1]
     return RunningCoach(decrypt(encrypted), provider)
 
@@ -170,7 +172,8 @@ async def verify_key(provider: str, key: str, preset: str | None = None) -> None
             today = date.today()
             await garmin_call("activities", today, today, key=key)
         elif provider == "openai":
-            await run_in_threadpool(OpenAIClient(key, preset if preset in OPENAI_PRESETS else "openai").check_credentials)
+            preset = normalize_coach_preset(preset) if preset else DEFAULT_OPENAI_PRESET
+            await run_in_threadpool(OpenAIClient(key, preset if preset in OPENAI_PRESETS else DEFAULT_OPENAI_PRESET).check_credentials)
         else:
             await run_in_threadpool(GigaChatClient(key).check_credentials)
     except Exception as exc:
@@ -295,7 +298,7 @@ def health() -> dict[str, str]:
     return {
         "status": "ok",
         "database": "postgresql" if database.is_postgres else "sqlite",
-        "model": settings.gigachat_model,
+        "model": GIGACHAT_PRESETS[DEFAULT_GIGACHAT_PRESET],
     }
 
 

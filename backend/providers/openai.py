@@ -6,13 +6,12 @@ from time import monotonic
 import httpx
 
 from coach_usage import TokenUsage
+from coach_presets import DEFAULT_OPENAI_PRESET, normalize_coach_preset
 
 
 OPENAI_PRESETS = {
-    "openai": ("gpt-6.2-sol", "medium"),
     "openai-light": ("gpt-6.2-sol", "low"),
     "openai-luna": ("gpt-6-luna", "low"),
-    "openai-astra": ("gpt-6.2-astra", "medium"),
 }
 
 
@@ -23,8 +22,8 @@ class OpenAIError(RuntimeError):
 
 
 class OpenAIClient:
-    def __init__(self, key: str, preset: str = "openai"):
-        self.model, self.reasoning_effort = OPENAI_PRESETS[preset]
+    def __init__(self, key: str, preset: str = DEFAULT_OPENAI_PRESET):
+        self.model, self.reasoning_effort = OPENAI_PRESETS[normalize_coach_preset(preset)]
         self.key = key
         self.usage = TokenUsage()
         self.configured = bool(key)

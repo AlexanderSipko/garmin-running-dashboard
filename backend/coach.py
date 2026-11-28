@@ -10,6 +10,7 @@ from typing import Any
 from activity_metrics import pace_label
 from coach_tools import GarminCoachTools
 from providers.gigachat import GigaChatClient
+from coach_presets import normalize_coach_preset
 from providers.openai import OPENAI_PRESETS, OpenAIClient
 from runner_plan import PLAN_RULES
 
@@ -38,6 +39,7 @@ class RunningCoach:
     """Generate short running summaries from the user's local activity history."""
 
     def __init__(self, auth_key: str, provider: str = "gigachat") -> None:
+        provider = normalize_coach_preset(provider)
         self.preset = provider
         self.provider = "openai" if provider in OPENAI_PRESETS else "gigachat"
         self.client = OpenAIClient(auth_key, provider) if self.provider == "openai" else GigaChatClient(auth_key, provider)
@@ -147,6 +149,7 @@ class RunningCoach:
                     "Не выводи упражнения, подходы, повторы или веса из длительности и пульса. "
                     "Темп копируй из готового поля pace в формате мин:сек/км. Не пересчитывай его самостоятельно. "
                     "Если есть running_power, учитывай среднюю и пиковую мощность в ваттах вместе с темпом и пульсом. "
+                    "Для вопроса о сегодняшней пробежке смотри running_power у записи в today_recorded_activities. "
                     "По этим двум числам не определяй мощность отдельных интервалов. "
                     "Если пользователь спрашивает о данных, которых нет в контексте, "
                     "скажи об этом и уточни, какие данные нужны. Отвечай по-русски, "
@@ -327,6 +330,7 @@ class RunningCoach:
                     "duration_seconds": duration_seconds,
                     "pace": pace_label(round(duration_seconds / distance_km)) if duration_seconds > 0 else None,
                     "average_heart_rate": float(activity.get("avg_hr_bpm") or 0),
+                    "running_power": activity.get("running_power"),
                     "elevation_gain_meters": float(
                         activity.get("elevation_gain_meters") or 0
                     ),
@@ -364,6 +368,14 @@ class RunningCoach:
             ),
         }
 
+        power_runs = [run["running_power"] for run in runs if run["running_power"] and run["running_power"].get("samples", 0) > 0]
+        if power_runs:
+            samples = sum(power["samples"] for power in power_runs)
+            context["average_power_watts"] = round(
+                sum(power["average_watts"] * power["samples"] for power in power_runs) / samples
+            )
+            context["runs_with_power"] = len(power_runs)
+
         if include_details:
             weekly_runs: dict[date, list[dict[str, Any]]] = {}
             for run in runs:
@@ -397,6 +409,7 @@ class RunningCoach:
                     "km": round(run["distance_km"], 1),
                     "pace": run["pace"],
                     "average_heart_rate": run["average_heart_rate"] or None,
+                    **({"running_power": run["running_power"]} if run["running_power"] else {}),
                     **({"garmin_description": run["garmin_description"]} if run["garmin_description"] else {}),
                 }
                 for run in runs[-2:]
