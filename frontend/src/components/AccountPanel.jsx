@@ -3,6 +3,7 @@ import RecoveryUsers from "./RecoveryUsers";
 import WeatherSettings from "./WeatherSettings";
 import RunnerPlanForm from "./RunnerPlanForm";
 import CoachMemorySettings from "./CoachMemory";
+import { version as appVersion } from "../../package.json";
 import { useEffect, useRef, useState } from "react";
 import { Footprints, KeyRound, LogIn, LogOut, Settings2, UserPlus, X } from "lucide-react";
 
@@ -380,6 +381,7 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
                     </ul>
                     <p className="mt-2">Нажми «Запомнить» в карточке, чтобы сохранить заметку. Исправить или очистить записи можно в «Памяти консультанта» выше.</p>
                   </details>
+                  <p className="px-1 text-xs text-slate-400 md:col-span-2">Версия {appVersion}</p>
                 </div>
               )}
             </div>
