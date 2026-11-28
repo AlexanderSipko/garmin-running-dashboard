@@ -5,6 +5,43 @@ from typing import Any
 
 from activity_metrics import activity_kind, activity_pace
 from dashboard_data import monday_of, parse_date
+from weather import location_forecast
+
+
+def runner_measurements_context(store: dict, day: date) -> dict:
+    fields = ("weight", "chest", "waist", "hips", "shoulders", "arm", "thigh", "neck", "calf", "glutes")
+    cutoff = day.isoformat()
+    measurements = []
+    for key, entry in sorted(store.get("body_measurements", {}).items(), reverse=True):
+        if key > cutoff:
+            continue
+        values = {field: entry[field] for field in fields if entry.get(field) is not None}
+        if values:
+            measurements.append({"date": key, **values})
+        if len(measurements) == 2:
+            break
+    garmin_weights = sorted(
+        (row for row in store.get("wellness_metrics", {}).get("weight", [])
+         if row.get("date") and str(row["date"])[:10] <= cutoff and row.get("value") is not None),
+        key=lambda row: row["date"], reverse=True,
+    )[:2]
+    return {
+        **({"manual_measurements_kg_cm": measurements} if measurements else {}),
+        **({"garmin_weight_kg": [{"date": str(row["date"])[:10], "kg": row["value"]}
+                                 for row in garmin_weights]} if garmin_weights else {}),
+    }
+
+
+def runner_weather_context(store: dict, today: date, *, activity_day: date | None = None) -> dict:
+    location = store.get("weather_location")
+    if not location or (activity_day is not None and activity_day != today):
+        return {}
+    end = activity_day or today + timedelta(days=6)
+    forecast = location_forecast(location)
+    days = {key: row for key, row in forecast["days"].items() if today.isoformat() <= key <= end.isoformat()}
+    if not days:
+        return {}
+    return {"city": location.get("name"), "source": "Open-Meteo forecast", "days": days}
 
 
 def activities_between(rows: list[dict[str, Any]], start: date, end: date) -> list[dict[str, Any]]:

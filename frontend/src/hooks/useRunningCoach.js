@@ -72,7 +72,7 @@ function useRunningCoach({
   }, [cacheKey]);
 
   useEffect(() => {
-    if (!active || chat?.day === focusDate) return;
+    if (!active) return;
     const controller = new AbortController();
     setHistoryLoading(true);
     const query = new URLSearchParams({ day: focusDate });
@@ -91,7 +91,7 @@ function useRunningCoach({
       })
       .finally(() => { if (!controller.signal.aborted) setHistoryLoading(false); });
     return () => controller.abort();
-  }, [active, focusDate, chat?.day]);
+  }, [active, focusDate]);
 
   const refresh = () => {
     setError("");
@@ -146,7 +146,7 @@ function useRunningCoach({
     hasHistory: todayChat?.hasHistory,
     loadingSummary,
     sending,
-    historyLoading: !todayChat && historyLoading,
+    historyLoading,
     error: error || summaryError,
     usage,
     ask,

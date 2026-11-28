@@ -7,7 +7,10 @@ from typing import Any, Callable
 from fastapi import HTTPException
 
 from coach import IncompleteCoachAnswer, RunningCoach, has_tool_protocol
-from coach_context import activities_between, daily_coach_context, is_running, strength_summary, wellness_between
+from coach_context import (
+    activities_between, daily_coach_context, is_running, runner_measurements_context,
+    runner_weather_context, strength_summary, wellness_between,
+)
 from coach_tools import GarminCoachTools
 from coach_memory import memory_state, wants_memory_update
 from providers.gigachat import GigaChatError
@@ -89,6 +92,13 @@ def analyze_period(
         "previous_strength": strength_summary(previous) if previous is not None else None,
         "last_sync_at": store.get("synced_at"),
     }
+    measurements = runner_measurements_context(store, min(end, reference_day))
+    if measurements:
+        activity_summary["runner_measurements"] = measurements
+    forecast = runner_weather_context(store, plan_day or date.today(), activity_day=start if activity_id is not None else None)
+    if forecast:
+        activity_summary["outdoor_forecast"] = forecast
+
     if activity_id is not None and selected:
         activity = selected[0]
         activity_summary["review_target"] = {

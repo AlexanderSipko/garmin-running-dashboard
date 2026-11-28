@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from calendar import monthrange
 from contextvars import ContextVar
@@ -313,10 +315,14 @@ def daily_cache_key(day: date, start: date, end: date) -> str:
 
 def coach_cache_revision(store: dict[str, Any]) -> list:
     active_week = store.get("training_week_active") or {}
+    measurements_revision = hashlib.sha256(
+        json.dumps(store.get("body_measurements", {}), sort_keys=True).encode()
+    ).hexdigest()
     return [store.get("synced_at"), store.get("wellness_synced_at"), store.get("runner_plan"),
             active_week.get("id"), active_week.get("revision", 0), store.get("deload_weeks"),
             store.get("calendar_plan_revision", 0), store.get("review_revision", 0),
-            store.get("coach_history_revision", 0), memory_state(store)["revision"]]
+            store.get("coach_history_revision", 0), memory_state(store)["revision"],
+            measurements_revision, (store.get("weather_location") or {}).get("id")]
 
 
 class WeekPlanRequest(BaseModel):

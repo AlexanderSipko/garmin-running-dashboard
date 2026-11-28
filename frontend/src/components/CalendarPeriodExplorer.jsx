@@ -42,7 +42,7 @@ function CalendarPeriodExplorer({
   const calendarPlanVersion = activePlanRow ? `${activePlanRow.plan_id}:${activePlanRow.revision}` : "no-plan";
 
   const [monthZonesOpen, setMonthZonesOpen] = useState(false);
-  const [activityReview, setActivityReview] = useState(null);
+  const [chatActivity, setChatActivity] = useState(null);
   const yearChartModeKey = `calendar-year-chart-mode:v1:${viewScope}`;
   const [combinedYear, setCombinedYear] = useState(() => readCalendarView(yearChartModeKey) === true);
 
@@ -172,7 +172,7 @@ function CalendarPeriodExplorer({
             {!publicDemo && <WeatherPanel weather={weather} request={weatherRequest} onChange={onWeatherChange} />}
             {coachEnabled && <RunningCoachPanel
               key={planRevision}
-              activityReview={activityReview}
+              chatActivity={chatActivity} onClose={() => setChatActivity(null)}
               modelLabel={coachModelLabel}
               viewScope={viewScope}
               period={selection.type}
@@ -496,7 +496,7 @@ function CalendarPeriodExplorer({
                     {(publicDemo || dayRuns.length > 1 || dayActivities.length === 0) && <DaySummary activities={dayRuns} date={periodStart} />}
                     {!publicDemo && <ActivityDetail date={periodStart} activities={dayActivities} detailCache={detailCache} onActivityUpdated={onActivityUpdated}
                       coachModelLabel={coachModelLabel}
-                      onReview={coachEnabled ? (activity, onAnalysis) => setActivityReview({ activity, onAnalysis }) : undefined} />}
+                      onOpenChat={coachEnabled ? setChatActivity : undefined} />}
                   </>
                 )}
               </div>

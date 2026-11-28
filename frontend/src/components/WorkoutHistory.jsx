@@ -15,7 +15,7 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "lo
 const kmFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
 const control = "rounded-lg border border-[#42535b] px-3 py-2 text-sm font-semibold hover:bg-[#283740]";
 
-function Description({ activity, strength, demo, onActivityUpdated, onReview, coachModelLabel }) {
+function Description({ activity, strength, demo, onActivityUpdated, onOpenChat, coachModelLabel }) {
   const [notice, setNotice] = useState("");
   const [manualCopy, setManualCopy] = useState(false);
   const text = activity.description?.trim() || "";
@@ -53,7 +53,7 @@ function Description({ activity, strength, demo, onActivityUpdated, onReview, co
         </PageLink>
       </div>
       {notice && <p role="status" className="text-slate-300">{notice}</p>}
-      {!demo && <ActivityCoachAnalysis activity={activity} onReview={onReview} modelLabel={coachModelLabel} readOnlySaved />}
+      {!demo && <ActivityCoachAnalysis activity={activity} onOpenChat={onOpenChat} modelLabel={coachModelLabel} readOnlySaved />}
     </div>
   );
 }
@@ -64,7 +64,7 @@ export default function WorkoutHistory({ activities, loading, error, demo, onAct
   const [year, setYear] = useState("all");
   const [limit, setLimit] = useState(pageSize);
   const [expanded, setExpanded] = useState(null);
-  const [activityReview, setActivityReview] = useState(null);
+  const [chatActivity, setChatActivity] = useState(null);
   const rows = useMemo(() => activities.flatMap((activity, index) => {
     const category = getActivityCategory(activity);
     const date = getActivityDate(activity);
@@ -74,11 +74,7 @@ export default function WorkoutHistory({ activities, loading, error, demo, onAct
   const years = Array.from(new Set(rows.map(({ date }) => date.getFullYear())));
   const visible = rows.filter(({ category, date }) => (filter === "all" || category === filter)
     && (year === "all" || String(date.getFullYear()) === year));
-  const reviewDate = activityReview ? getActivityDate(activityReview.activity) : new Date();
-
-  function reviewActivity(activity, onAnalysis) {
-    setActivityReview({ activity, onAnalysis });
-  }
+  const reviewDate = chatActivity ? getActivityDate(chatActivity) : new Date();
 
   function setView(update, value) {
     update(value);
@@ -127,13 +123,13 @@ export default function WorkoutHistory({ activities, loading, error, demo, onAct
                 <ChevronDown size={17} aria-hidden="true" className={open ? "shrink-0 rotate-180" : "shrink-0"} />
               </button>
               {open && <Description activity={activity} strength={strength} demo={demo} onActivityUpdated={onActivityUpdated}
-                onReview={coachEnabled ? reviewActivity : undefined} coachModelLabel={coachModelLabel} />}
+                onOpenChat={coachEnabled ? setChatActivity : undefined} coachModelLabel={coachModelLabel} />}
             </li>
           );
         })}
       </ul>
       {visible.length > limit && <button type="button" className={`${control} w-fit`} onClick={() => setLimit((value) => value + pageSize)}>Показать ещё</button>}
-      {coachEnabled && <RunningCoachPanel key={planRevision} activityReview={activityReview} onClose={() => setActivityReview(null)}
+      {coachEnabled && <RunningCoachPanel key={planRevision} chatActivity={chatActivity} onClose={() => setChatActivity(null)}
         showOpenButtons={false} modelLabel={coachModelLabel} viewScope={viewScope} period="day"
         periodStart={reviewDate} periodEnd={reviewDate} label={dateFormat.format(reviewDate)} syncedAt={syncedAt}
         onTrainingWeekChanged={onTrainingWeekChanged} />}

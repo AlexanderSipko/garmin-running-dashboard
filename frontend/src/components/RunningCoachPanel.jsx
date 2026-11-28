@@ -9,14 +9,8 @@ import { CoachMemoryProposal } from "./CoachMemory";
 import TrainingWeekPanel from "./TrainingWeekPanel";
 import useRunningCoach from "../hooks/useRunningCoach";
 
-function Consultation({ active, focusDay, label, period, periodStart, periodEnd, syncedAt, calendarPlanVersion, onTrainingWeekChanged, review, viewScope }) {
+function Consultation({ active, focusDay, label, period, periodStart, periodEnd, syncedAt, calendarPlanVersion, onTrainingWeekChanged, viewScope }) {
   const [question, setQuestion] = useState("");
-  const [completedReview, setCompletedReview] = useState(null);
-  const sentReview = useRef(null);
-  const [failedReview, setFailedReview] = useState(null);
-  const composer = useRef(null);
-  const latestMessages = useRef(null);
-  const reviewActivity = review !== completedReview ? review?.activity : null;
   const [trainingWeekId, setTrainingWeekId] = useState(null);
   const [sessionProposal, setSessionProposal] = useState(null);
   const [memoryProposal, setMemoryProposal] = useState(null);
@@ -29,23 +23,6 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
   const coach = useRunningCoach({ period, periodStart, periodEnd, syncedAt, focusDay, active, trainingWeekId });
   const ready = coach.statusChecked && coach.configured && !coach.unavailable;
   const busy = coach.loadingSummary || coach.sending;
-
-  useEffect(() => {
-    if (!active || !reviewActivity || sentReview.current === review || !ready || busy || coach.historyLoading) return;
-    sentReview.current = review;
-    setFailedReview(null);
-    const date = String(reviewActivity.start_time).slice(0, 10);
-    const prompt = `Разбери тренировку Garmin за ${date} (№${reviewActivity.id}). Что получилось и что учесть в следующий раз?`;
-    void coach.ask(prompt, reviewActivity.id, true).then((result) => {
-      if (result) {
-        setCompletedReview(review);
-        if (result.activity_analysis) review.onAnalysis?.(result.activity_analysis);
-        requestAnimationFrame(() => latestMessages.current?.scrollIntoView({ block: "start" }));
-      }
-      else setFailedReview(review);
-    });
-    composer.current?.scrollIntoView({ block: "nearest" });
-  }, [active, review, reviewActivity, ready, busy, coach.historyLoading, coach.ask]);
 
   function submit(event) {
     event.preventDefault();
@@ -123,12 +100,7 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
       {memoryProposal && <CoachMemoryProposal key={memoryProposal.note} proposal={memoryProposal}
         onClose={(saved) => { setMemorySaved(saved); setMemoryProposal(null); }} />}
       {memorySaved && <p role="status" className="text-xs text-emerald-300">Сохранено в памяти консультанта.</p>}
-      <div ref={composer} className="grid gap-2">
-        {reviewActivity && (
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-[#6f5540] bg-[#302820] px-3 py-2 text-xs text-[#f3bc7f]">
-            <span>Разбор: {reviewActivity.name || "Тренировка Garmin"} · {String(reviewActivity.start_time).slice(0, 10)}</span>
-          </div>
-        )}
+      <div className="grid gap-2">
         <form className="grid grid-cols-[minmax(0,1fr)_40px] gap-2" onSubmit={submit}>
           <input aria-label="Самочувствие или вопрос консультанту" className="min-w-0 rounded-lg border border-[#415157] bg-[#172229] px-3 py-2 text-sm"
             value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={1200}
@@ -140,14 +112,6 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
         </form>
       </div>
       {coach.error && <p role="alert" className="text-sm text-rose-300">{coach.error}</p>}
-      {reviewActivity && failedReview === review && (
-        <button type="button" disabled={!ready || busy} onClick={() => {
-          sentReview.current = null;
-          setFailedReview(null);
-        }} className="w-fit rounded-lg border border-[#6f5540] px-3 py-2 text-sm text-[#f3bc7f] disabled:opacity-50">
-          Повторить разбор
-        </button>
-      )}
       {coach.unavailable && <p className="text-sm text-rose-300">Консультация сейчас недоступна.</p>}
       {coach.usage?.total_tokens > 0 && (
         <p className="text-xs text-slate-400">
@@ -157,7 +121,7 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
         </p>
       )}
       {coach.messages.length > 0 && (
-        <section ref={latestMessages} className="grid gap-2" aria-live="polite">
+        <section className="grid gap-2" aria-live="polite">
           <h3 className="text-sm font-semibold text-slate-300">Сегодня</h3>
           <CoachMessages messages={coach.messages} onDeleted={coach.removeExchange} disabled={busy} />
         </section>
@@ -168,7 +132,7 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
 }
 
 export default function RunningCoachPanel({ period, periodStart, periodEnd, label, syncedAt, calendarPlanVersion, onTrainingWeekChanged,
-  activityReview, viewScope, modelLabel, onClose, showOpenButtons = true }) {
+  chatActivity, viewScope, modelLabel, onClose, showOpenButtons = true }) {
   const modal = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
   const [opened, setOpened] = useState(false);
@@ -180,11 +144,11 @@ export default function RunningCoachPanel({ period, periodStart, periodEnd, labe
   }, [isOpen]);
 
   useEffect(() => {
-    if (activityReview) {
+    if (chatActivity) {
       setOpened(true);
       setIsOpen(true);
     }
-  }, [activityReview]);
+  }, [chatActivity]);
 
   const focusDay = new Date();
 
@@ -229,7 +193,7 @@ export default function RunningCoachPanel({ period, periodStart, periodEnd, labe
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6">
             {opened && (
               <div className="pt-3">
-                <Consultation active={isOpen} review={activityReview} viewScope={viewScope} focusDay={focusDay} label={label}
+                <Consultation active={isOpen} viewScope={viewScope} focusDay={focusDay} label={label}
                   period={period} periodStart={periodStart} periodEnd={periodEnd} syncedAt={syncedAt} calendarPlanVersion={calendarPlanVersion}
                   onTrainingWeekChanged={onTrainingWeekChanged} />
               </div>

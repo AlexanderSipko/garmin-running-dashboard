@@ -48,6 +48,16 @@ def daily_forecast(latitude: float, longitude: float, cache_window: int) -> dict
     }
 
 
+def location_forecast(location: dict | None) -> dict:
+    if not location:
+        return {"location": None, "days": {}}
+    try:
+        days = daily_forecast(location["latitude"], location["longitude"], int(time()) // 1800)
+        return {"location": location, "days": days}
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError):
+        return {"location": location, "days": {}, "unavailable": True}
+
+
 def add_weather_routes(router, database, current):
     @router.get("/weather/search")
     def search(request: Request, city: str = Query(min_length=2, max_length=100)):
@@ -79,11 +89,4 @@ def add_weather_routes(router, database, current):
     @router.get("/weather")
     def weather(request: Request):
         user_id, _ = current(request)
-        location = database.read(user_id).get("weather_location")
-        if not location:
-            return {"location": None, "days": {}}
-        try:
-            days = daily_forecast(location["latitude"], location["longitude"], int(time()) // 1800)
-            return {"location": location, "days": days}
-        except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError):
-            return {"location": location, "days": {}, "unavailable": True}
+        return location_forecast(database.read(user_id).get("weather_location"))
