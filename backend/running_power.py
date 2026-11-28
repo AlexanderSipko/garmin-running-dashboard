@@ -27,31 +27,45 @@ def power_zone_durations(histogram, zones):
     }
 
 
-def running_power_for_period(store, start, end, read_details):
+def running_power_for_period(store, start, end, read_details, *, include_excluded=False):
     zones = power_zone_bounds(store.get("runner_plan"))
-    ids = []
+    runs = {}
     for activity in store.get("activities", []):
         day = parse_date(activity.get("start_time"))
         key = str(activity.get("id") or "")
         if activity_kind(activity) == "run" and day and start <= day <= end and key.isascii() and key.isdecimal():
-            ids.append(key)
+            runs[key] = (day, activity)
 
-    details = read_details(ids)
+    details = read_details(list(runs))
     histogram_total = {}
     recorded_runs = 0
     missing = []
-    for key in ids:
-        histogram = details.get(key, {}).get("running_power_seconds_by_watt")
+    excluded = []
+    for key, (day, activity) in runs.items():
+        detail = details.get(key)
+        histogram = (detail or {}).get("running_power_seconds_by_watt")
         if histogram is None:
             missing.append(key)
+        if not histogram:
+            if include_excluded:
+                if detail is None:
+                    reason = "not_loaded"
+                elif histogram is None:
+                    reason = "needs_refresh"
+                elif detail.get("running_power"):
+                    reason = "summary_only"
+                else:
+                    reason = "no_power"
+                excluded.append({"activity_id": key, "date": day.isoformat(),
+                                 "name": str(activity.get("name") or "")[:120], "reason": reason})
             continue
-        if histogram:
-            recorded_runs += 1
+        recorded_runs += 1
         if zones:
             for watts, seconds in histogram.items():
                 histogram_total[watts] = histogram_total.get(watts, 0) + seconds
     return {
-        "configured": bool(zones), "runs": len(ids), "recorded_runs": recorded_runs,
+        "configured": bool(zones), "runs": len(runs), "recorded_runs": recorded_runs,
         **power_zone_durations(histogram_total, zones),
         "missing_activity_ids": missing,
+        **({"excluded_runs": sorted(excluded, key=lambda row: row["date"], reverse=True)} if include_excluded else {}),
     }

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { localDateKey } from "../lib/wellnessDates";
 import { fmtPace } from "../lib/format";
-import { averageRunningPace, emptySummary } from "../lib/calendarAnalytics";
+import { averageRunningPace, averageRunningPower, emptySummary } from "../lib/calendarAnalytics";
 import { SelectedDayWeather } from "./DayWeather";
 import WeatherPanel from "./WeatherPanel";
 import DaySummary from "./DaySummary";
@@ -472,12 +472,14 @@ function CalendarPeriodExplorer({
                 distanceKm: monthlySummary?.runKm || 0,
                 pace: averageRunningPace(monthlySummary),
                 heartRate: monthlySummary?.hrWeight ? Math.round(monthlySummary.hrSeconds / monthlySummary.hrWeight) : null,
+                power: averageRunningPower([monthlySummary]),
                 cyclingKm: monthlySummary?.cyclingKm || 0,
                 strengthCount: monthlySummary?.strengthCount || 0,
                 previous: priorMonthSummary ? {
                   distanceKm: priorMonthSummary.runKm,
                   pace: averageRunningPace(priorMonthSummary),
                   heartRate: priorMonthSummary.hrWeight ? Math.round(priorMonthSummary.hrSeconds / priorMonthSummary.hrWeight) : null,
+                  power: averageRunningPower([priorMonthSummary]),
                   cyclingKm: priorMonthSummary.cyclingKm,
                   strengthCount: priorMonthSummary.strengthCount,
                 } : null,

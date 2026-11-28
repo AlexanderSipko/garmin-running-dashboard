@@ -10,7 +10,8 @@ from runner_plan import plan_context
 
 
 def running_zones_for_period(
-    store: dict, start: date, end: date, read_details: Callable[[list[str]], dict[str, dict]], *, by_day: bool = False,
+    store: dict, start: date, end: date, read_details: Callable[[list[str]], dict[str, dict]], *,
+    by_day: bool = False, include_excluded: bool = False,
 ) -> dict:
     zones = plan_context(store.get("runner_plan"), date.today()).get("running_heart_rate_zones_bpm")
     if not zones:
@@ -23,6 +24,7 @@ def running_zones_for_period(
     total = empty()
     days = {}
     missing = []
+    excluded = []
     runs = []
     activity_ids = []
     for activity in store.get("activities", []):
@@ -36,10 +38,10 @@ def running_zones_for_period(
             activity_ids.append(activity_id)
         else:
             activity_id = None
-        runs.append((day, activity_id))
+        runs.append((day, activity_id, activity))
 
     details = read_details(activity_ids)
-    for day, activity_id in runs:
+    for day, activity_id, activity in runs:
         buckets = [total]
         if by_day:
             key = day.isoformat()
@@ -49,8 +51,6 @@ def running_zones_for_period(
         for bucket in buckets:
             bucket["runs"] += 1
 
-        if activity_id is None:
-            continue
         detail = details.get(activity_id)
         result = running_zone_times(detail, zones)
         if result:
@@ -61,12 +61,31 @@ def running_zones_for_period(
                 bucket["approximate"] |= result["source"] == "sampled_fit_estimate"
                 for zone, duration in result["seconds_by_zone"].items():
                     bucket["seconds_by_zone"][zone] += duration
-        elif detail is None:
+        elif include_excluded:
+            if activity_id is None:
+                reason = "no_activity_id"
+            elif detail is None:
+                reason = "not_loaded"
+            elif detail.get("track_archived") and "heart_rate_seconds_by_bpm" not in detail:
+                reason = "needs_refresh"
+            elif activity.get("avg_hr_bpm") or any(point.get("heart_rate_bpm") for point in detail.get("points") or []):
+                reason = "summary_only"
+            else:
+                reason = "no_pulse"
+            if reason in {"not_loaded", "needs_refresh"}:
+                missing.append(activity_id)
+            excluded.append({
+                "activity_id": activity_id, "date": day.isoformat(),
+                "name": str(activity.get("name") or "")[:120], "reason": reason,
+            })
+        elif activity_id is not None and detail is None:
             missing.append(activity_id)
 
     result = {"configured": True, **total, "missing_activity_ids": missing}
     if by_day:
         result["days"] = days
+    if include_excluded:
+        result["excluded_runs"] = sorted(excluded, key=lambda row: row["date"], reverse=True)
     return result
 
 

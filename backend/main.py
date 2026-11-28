@@ -833,18 +833,19 @@ def dashboard_month_zones(month_start: date) -> dict[str, Any]:
     month_end = month_start.replace(day=monthrange(month_start.year, month_start.month)[1])
     result = running_zones_for_period(
         read_store(), month_start, month_end,
-        lambda activity_ids: database.read_activity_details(user_id, activity_ids), by_day=True,
+        lambda activity_ids: database.read_activity_details(user_id, activity_ids), by_day=True, include_excluded=True,
     )
     if result.get("missing_activity_ids") and not database.keys(user_id)[0]:
         result["missing_activity_ids"] = []
     return result
 
 
-def dashboard_running_power(start: date, end: date) -> dict[str, Any]:
+def dashboard_running_power(start: date, end: date, *, include_excluded: bool = False) -> dict[str, Any]:
     user_id = account_id.get()
     result = running_power_for_period(
         read_store(), start, end,
         lambda activity_ids: database.read_activity_details(user_id, activity_ids),
+        include_excluded=include_excluded,
     )
     if result["missing_activity_ids"] and not database.keys(user_id)[0]:
         result["missing_activity_ids"] = []
@@ -863,7 +864,7 @@ def dashboard_month_power(month_start: date) -> dict[str, Any]:
     if month_start.day != 1:
         raise HTTPException(422, "Укажи первый день месяца.")
     month_end = month_start.replace(day=monthrange(month_start.year, month_start.month)[1])
-    return dashboard_running_power(month_start, month_end)
+    return dashboard_running_power(month_start, month_end, include_excluded=True)
 
 
 @app.get("/api/dashboard/wellness")

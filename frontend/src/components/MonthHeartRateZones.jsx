@@ -2,9 +2,14 @@ import { Bar, BarChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Toolt
 import { demoWeekHeartRateZones } from "../data/demoDashboard";
 import useMonthZoneDetails from "../hooks/useMonthZoneDetails";
 import ZoneDurationSummary, { zoneColors as zones } from "./ZoneDurationSummary";
+import ZoneCoverageExclusions from "./ZoneCoverageExclusions";
 import { DeloadLegend, deloadAreaStyle, getDeloadRanges, MonthAxisTick } from "./MonthChartDeload";
 
 const format = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
+const exclusionReasons = {
+  summary_only: "Пульс известен, но недостаточно точек для расчёта времени по зонам.",
+  no_pulse: "В загруженных деталях нет записей пульса.",
+};
 
 export default function MonthHeartRateZones({ monthStart, calendarDays, demo, onActivityUpdated }) {
   const { data, busy, error, load } = useMonthZoneDetails({
@@ -63,7 +68,7 @@ export default function MonthHeartRateZones({ monthStart, calendarDays, demo, on
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-300">
         {busy && <span role="status">Загружаю…</span>}
         {data?.configured === false && <span>Укажи пульсовые зоны бега в настройках.</span>}
-        {data?.configured && <span>Пульс у {data.recorded_runs} из {data.runs} пробежек{data.approximate ? " · часть данных приблизительная" : ""}</span>}
+        {data?.configured && <span>Зоны пульса рассчитаны для {data.recorded_runs} из {data.runs} пробежек{data.approximate ? " · часть данных приблизительная" : ""}.</span>}
         {!busy && !hasData && data?.configured && <span>Нет данных для графика.</span>}
         {!demo && data?.configured && <button type="button" disabled={busy} onClick={() => load()} className="rounded border border-[#45565d] px-2 py-1 disabled:opacity-50">Обновить</button>}
         {data?.missing_activity_ids?.length > 0 && (
@@ -75,6 +80,7 @@ export default function MonthHeartRateZones({ monthStart, calendarDays, demo, on
         {error && <p role="alert" className="text-rose-300">{error}</p>}
         {error && !data && <button type="button" disabled={busy} onClick={() => load()} className="underline">Повторить</button>}
       </div>
+      <ZoneCoverageExclusions runs={data?.excluded_runs} reasons={exclusionReasons} />
     </div>
   );
 }

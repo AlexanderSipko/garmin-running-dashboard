@@ -1,9 +1,14 @@
 import { Bar, BarChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import useMonthZoneDetails from "../hooks/useMonthZoneDetails";
 import ZoneDurationSummary, { zoneColors } from "./ZoneDurationSummary";
+import ZoneCoverageExclusions from "./ZoneCoverageExclusions";
 import { DeloadLegend, deloadAreaStyle, getDeloadRanges, MonthAxisTick } from "./MonthChartDeload";
 
 const button = "rounded border border-[#45565d] px-2 py-1 disabled:opacity-50";
+const exclusionReasons = {
+  summary_only: "Есть среднее и пик, но недостаточно точек для времени по зонам.",
+  no_power: "В загруженных деталях FIT нет ватт.",
+};
 
 export default function MonthRunningPower({ days, monthStart, demo, onActivityUpdated }) {
   const { data, busy, error, load } = useMonthZoneDetails({
@@ -54,7 +59,7 @@ export default function MonthRunningPower({ days, monthStart, demo, onActivityUp
         title="Зоны мощности за месяц" caption="Длительность по записям FIT" label="с мощностью" />
       {!demo && <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-300">
         {busy && <span role="status">Загружаю…</span>}
-        {data && <span>Запись мощности по времени: {data.recorded_runs} из {data.runs} пробежек.</span>}
+        {data && <span>{data.configured ? "Зоны мощности рассчитаны" : "Есть данные для расчёта зон"} для {data.recorded_runs} из {data.runs} пробежек.</span>}
         {data?.configured === false && <span>Заполни зоны мощности в настройках плана бегуна.</span>}
         {data?.configured && !data.covered_seconds && <span>Нет данных для зон мощности.</span>}
         <button type="button" disabled={busy} onClick={() => load()} className={button}>Обновить</button>
@@ -65,6 +70,7 @@ export default function MonthRunningPower({ days, monthStart, demo, onActivityUp
         )}
         {error && <p role="alert" className="text-rose-300">{error}</p>}
       </div>}
+      <ZoneCoverageExclusions runs={data?.excluded_runs} reasons={exclusionReasons} />
     </div>
   );
 }

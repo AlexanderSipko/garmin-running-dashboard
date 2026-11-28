@@ -118,10 +118,11 @@ function MonthChange({ value, previous, type }) {
   const amount = Math.abs(delta);
   const formatted = type === "pace" ? (amount ? `${fmtPace(amount)} /км` : "0:00 /км")
     : type === "km" ? `${amount.toFixed(1)} км`
-    : type === "pulse" ? `${amount} уд/мин` : String(amount);
+    : type === "pulse" ? `${amount} уд/мин`
+    : type === "power" ? `${amount} Вт` : String(amount);
   const Icon = delta > 0 ? ArrowUp : delta < 0 ? ArrowDown : Minus;
   const positive = type === "pace" || type === "pulse" ? delta < 0 : delta > 0;
-  const color = delta === 0 ? "text-slate-400" : positive ? "text-emerald-300" : "text-rose-300";
+  const color = delta === 0 || type === "power" ? "text-slate-400" : positive ? "text-emerald-300" : "text-rose-300";
   return (
     <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-black/15 px-1.5 py-0.5 text-xs font-semibold ${color}`}
       title="Изменение к предыдущему календарному месяцу">
@@ -145,6 +146,7 @@ function PeriodTrends({ data, periodLabel, showRunning, showStrength, showCyclin
         ["За месяц", `${periodSummary.distanceKm.toFixed(1)} км`, "distanceKm", "km"],
         ["Средний темп", periodSummary.pace == null ? "—" : `${fmtPace(periodSummary.pace)} /км`, "pace", "pace"],
         ["Средний пульс", periodSummary.heartRate == null ? "—" : `${periodSummary.heartRate} bpm`, "heartRate", "pulse"],
+        ["Средняя мощность", periodSummary.power == null ? "—" : `${periodSummary.power} Вт`, "power", "power"],
       );
     }
     if (showCycling) monthMetrics.push(["Велосипед за месяц", `${periodSummary.cyclingKm.toFixed(1)} км`, "cyclingKm", "km"]);
