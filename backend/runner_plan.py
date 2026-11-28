@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 Bpm = Annotated[int, Field(strict=True, ge=30, le=250)]
+Watts = Annotated[int, Field(strict=True, ge=0, le=3000)]
 
 Stage = Literal["base", "build", "taper", "recovery"]
 
@@ -40,6 +41,8 @@ class RunnerPlan(BaseModel):
     heart_rate_zone_starts: list[Bpm] = Field(default_factory=list, max_length=5)
 
     heart_rate_zone_ends: list[Bpm] = Field(default_factory=list, max_length=5)
+    power_zone_starts: list[Watts] = Field(default_factory=list, max_length=5)
+    power_zone_ends: list[Watts] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode="after")
     def validate_zone_ranges(self):
@@ -50,6 +53,13 @@ class RunnerPlan(BaseModel):
             or any(end >= start for end, start in zip(ends, starts[1:]))
         ):
             raise ValueError("Зоны должны идти по возрастанию и не пересекаться.")
+        starts, ends = self.power_zone_starts, self.power_zone_ends
+        if (starts or ends) and (
+            len(starts) != 5 or len(ends) != 5
+            or any(start > end for start, end in zip(starts, ends))
+            or any(end >= start for end, start in zip(ends, starts[1:]))
+        ):
+            raise ValueError("Укажи пять возрастающих зон мощности без пересечений.")
         return self
 
     @field_validator("heart_rate_zone_starts")

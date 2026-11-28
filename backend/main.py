@@ -21,6 +21,7 @@ from activity_retention import archive_expired_track, retention_cutoff
 from accounts import account_routes, decrypt
 from coach import RunningCoach
 from weekly_heart_rate import running_zones_for_period, weekly_running_zones
+from running_power import running_power_for_period
 from coach_usage import TokenUsage, record_daily_usage
 from coach_plan_dialog import TRAINING_TABLE, confirmed_plan_reply, is_plan_request, plan_move_reply
 from coach_context import is_running, strength_summary
@@ -839,6 +840,32 @@ def dashboard_month_zones(month_start: date) -> dict[str, Any]:
     return result
 
 
+def dashboard_running_power(start: date, end: date) -> dict[str, Any]:
+    user_id = account_id.get()
+    result = running_power_for_period(
+        read_store(), start, end,
+        lambda activity_ids: database.read_activity_details(user_id, activity_ids),
+    )
+    if result["missing_activity_ids"] and not database.keys(user_id)[0]:
+        result["missing_activity_ids"] = []
+    return result
+
+
+@app.get("/api/dashboard/week-power")
+def dashboard_week_power(week_start: date) -> dict[str, Any]:
+    if week_start.weekday() != 0:
+        raise HTTPException(422, "Дата начала недели должна быть понедельником.")
+    return dashboard_running_power(week_start, week_start + timedelta(days=6))
+
+
+@app.get("/api/dashboard/month-power")
+def dashboard_month_power(month_start: date) -> dict[str, Any]:
+    if month_start.day != 1:
+        raise HTTPException(422, "Укажи первый день месяца.")
+    month_end = month_start.replace(day=monthrange(month_start.year, month_start.month)[1])
+    return dashboard_running_power(month_start, month_end)
+
+
 @app.get("/api/dashboard/wellness")
 def dashboard_wellness_day(day: date) -> dict[str, Any]:
     store = read_store()
@@ -948,6 +975,8 @@ async def activity_detail(
 
     fields = detail.pop("activity", {})
     fields.pop("id", None)
+    if detail.get("running_power"):
+        fields["running_power"] = detail["running_power"]
 
     updated_activity = None
     weekly_volume = None

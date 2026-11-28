@@ -1,9 +1,9 @@
 import { demoWeekHeartRateZones } from "../data/demoDashboard";
-import WeekHeartRateZones from "./WeekHeartRateZones";
+import WeekRunningZones from "./WeekHeartRateZones";
 import DayWeather, { weatherLabel } from "./DayWeather";
 import { Fragment, useState } from "react";
 import { Bike, CalendarDays, Dumbbell, Flag, Gauge, HeartPulse } from "lucide-react";
-import { averageRunningPace, dayKey, demoWeeklyVolumeReference, weeklyVolumeComparison } from "../lib/calendarAnalytics";
+import { averageRunningPace, averageRunningPower, dayKey, demoWeeklyVolumeReference, weeklyVolumeComparison } from "../lib/calendarAnalytics";
 import { fmtPace } from "../lib/format";
 import { localDateKey } from "../lib/wellnessDates";
 
@@ -73,7 +73,7 @@ function WeekVolumeComparison({ comparison, previousDeload }) {
 
 export default function MonthDayCalendar({
   expandedYear, calendarMonth, monthNames, daySummaries, selectedTypes, selection, onSelectDay,
-  deloadWeeks = {}, plannedSessions = [], onMarkDeload, syncBusy, forecast, weeklyVolume, publicDemo, selectedDayDetails,
+  deloadWeeks = {}, plannedSessions = [], onMarkDeload, syncBusy, forecast, weeklyVolume, publicDemo, selectedDayDetails, onActivityUpdated, zonesRevision,
 }) {
   const [pendingWeek, setPendingWeek] = useState(null);
   const [labelError, setLabelError] = useState(null);
@@ -134,6 +134,12 @@ export default function MonthDayCalendar({
           const comparison = showRunning ? weeklyVolumeComparison(reference, weekKm) : null;
           const previousMonday = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() - 7);
           const previousDeload = Boolean(deloadWeeks[localDateKey(previousMonday)]);
+          const comparableDays = week.days.filter((day) => !currentWeek || localDateKey(day) <= todayKey);
+          const averagePower = averageRunningPower(comparableDays.map((day) => daySummaries.get(dayKey(day))));
+          const previousPower = averageRunningPower(comparableDays.map((day) => {
+            const previousDay = new Date(day.getFullYear(), day.getMonth(), day.getDate() - 7);
+            return daySummaries.get(dayKey(previousDay));
+          }));
           let plannedKm = 0;
           let recordedOnPlannedDaysKm = 0;
           for (const date of week.days) {
@@ -149,7 +155,8 @@ export default function MonthDayCalendar({
           return <Fragment key={weekKey}>
             <div id={`calendar-week-${weekKey}`} className="@container col-span-7 mt-1 scroll-mt-[calc(var(--app-safe-top,0px)+0.75rem)] min-w-0 rounded-md border border-white/10 bg-[#ffffff06] px-2.5 py-1.5 tabular-nums">
               {showRunning && weekRuns.some((summary) => summary.runCount > 0) && (
-                <WeekHeartRateZones weekStart={weekKey} demoData={publicDemo ? demoWeekHeartRateZones(
+                <WeekRunningZones key={zonesRevision} weekStart={weekKey} averagePower={averagePower} previousPower={previousPower}
+                  currentWeek={currentWeek} onActivityUpdated={onActivityUpdated} demoData={publicDemo ? demoWeekHeartRateZones(
                   weekRuns.reduce((sum, item) => sum + item.runCount, 0),
                   weekRuns.reduce((sum, item) => sum + item.runSeconds, 0),
                 ) : null} />

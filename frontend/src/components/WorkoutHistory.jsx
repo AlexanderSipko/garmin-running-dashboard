@@ -118,6 +118,7 @@ export default function WorkoutHistory({ activities, loading, error, demo, onAct
                     {dateFormat.format(date)}
                     {strength ? (duration > 0 && ` · ${fmtDuration(duration)}`)
                       : (activity.distance_meters > 0 && ` · ${kmFormat.format(activity.distance_meters / 1000)} км`)}
+                    {category === "running" && activity.running_power && ` · ${activity.running_power.average_watts} Вт ср.`}
                   </small>
                 </span>
                 <ChevronDown size={17} aria-hidden="true" className={open ? "shrink-0 rotate-180" : "shrink-0"} />

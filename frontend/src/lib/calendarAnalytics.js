@@ -16,11 +16,23 @@ export function dayKey(date) {
 }
 
 export function emptySummary() {
-  return { runKm: 0, runSeconds: 0, timedKm: 0, timedSeconds: 0, hrSeconds: 0, hrWeight: 0, runCount: 0, strengthCount: 0, cyclingKm: 0, cyclingCount: 0 };
+  return { runKm: 0, runSeconds: 0, timedKm: 0, timedSeconds: 0, hrSeconds: 0, hrWeight: 0,
+    powerSum: 0, powerSamples: 0, powerRunCount: 0, runCount: 0, strengthCount: 0, cyclingKm: 0, cyclingCount: 0 };
 }
 
 export function averageRunningPace(summary) {
   return summary?.timedKm > 0 ? summary.timedSeconds / summary.timedKm : null;
+}
+
+export function averageRunningPower(days) {
+  let watts = 0;
+  let samples = 0;
+  for (const day of days) {
+    if (!day?.powerSamples) continue;
+    watts += day.powerSum;
+    samples += day.powerSamples;
+  }
+  return samples ? Math.round(watts / samples) : null;
 }
 
 function addActivity(summary, activity, category) {
@@ -38,6 +50,13 @@ function addActivity(summary, activity, category) {
     if (heartRate > 0 && seconds > 0) {
       summary.hrSeconds += heartRate * seconds;
       summary.hrWeight += seconds;
+    }
+    const power = activity.running_power;
+    if (Number.isFinite(power?.average_watts) && power.average_watts > 0
+        && Number.isInteger(power.samples) && power.samples > 0) {
+      summary.powerSum += power.average_watts * power.samples;
+      summary.powerSamples += power.samples;
+      summary.powerRunCount += 1;
     }
   } else if (category === "cycling") {
     summary.cyclingKm += Number(activity.distance_meters || 0) / 1000;

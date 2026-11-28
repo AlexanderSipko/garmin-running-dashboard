@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { readCalendarView, saveCalendarView } from "./calendarViewState";
 import MonthHeartRateZones from "./MonthHeartRateZones";
+import MonthRunningPower from "./MonthRunningPower";
 import CombinedYearTrends from "./CombinedYearTrends";
 import {
   Activity,
@@ -41,10 +42,17 @@ function CalendarPeriodExplorer({
   const activePlanRow = plannedSessions?.find((session) => session.current_plan);
   const calendarPlanVersion = activePlanRow ? `${activePlanRow.plan_id}:${activePlanRow.revision}` : "no-plan";
 
-  const [monthZonesOpen, setMonthZonesOpen] = useState(false);
+  const [monthChartMode, setMonthChartMode] = useState("training");
+  const monthChartKey = `${chartYear}-${chartMonth}-${planRevision}`;
+  const monthStart = chartMonth == null ? null : localDateKey(new Date(chartYear, chartMonth, 1));
   const [chatActivity, setChatActivity] = useState(null);
   const yearChartModeKey = `calendar-year-chart-mode:v1:${viewScope}`;
   const [combinedYear, setCombinedYear] = useState(() => readCalendarView(yearChartModeKey) === true);
+
+  function onMonthDetailUpdated(activity, nextWeeklyVolume) {
+    detailCache.delete(String(activity.id));
+    onActivityUpdated(activity, nextWeeklyVolume);
+  }
 
   useEffect(() => {
     saveCalendarView(yearChartModeKey, combinedYear);
@@ -438,14 +446,26 @@ function CalendarPeriodExplorer({
           <section className="min-w-0" aria-label="График выбранного месяца">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-bold capitalize">{monthNames[chartMonth]} · {chartYear}</h2>
-              {showRunning && <button type="button" aria-pressed={monthZonesOpen} onClick={() => setMonthZonesOpen(!monthZonesOpen)}
-                className="min-h-9 rounded-lg border border-[#536671] px-3 text-xs font-semibold text-[#b5e6d8] hover:bg-[#293840]">
-                {monthZonesOpen ? "График тренировок" : "Зоны пульса"}
-              </button>}
+              {showRunning && <div className="flex flex-wrap gap-2">
+                <button type="button" aria-pressed={monthChartMode === "zones"}
+                  onClick={() => setMonthChartMode(monthChartMode === "zones" ? "training" : "zones")}
+                  className="min-h-9 rounded-lg border border-[#536671] px-3 text-xs font-semibold text-[#b5e6d8] hover:bg-[#293840]">
+                  {monthChartMode === "zones" ? "График тренировок" : "Зоны пульса"}
+                </button>
+                <button type="button" aria-pressed={monthChartMode === "power"}
+                  onClick={() => setMonthChartMode(monthChartMode === "power" ? "training" : "power")}
+                  className="min-h-9 rounded-lg border border-[#536671] px-3 text-xs font-semibold text-[#ffc988] hover:bg-[#293840]">
+                  {monthChartMode === "power" ? "График тренировок" : "Мощность"}
+                </button>
+              </div>}
             </div>
-            {showRunning && monthZonesOpen ? (
-              <MonthHeartRateZones key={`${chartYear}-${chartMonth}`} monthStart={localDateKey(new Date(chartYear, chartMonth, 1))}
-                calendarDays={monthChartData} demo={publicDemo} />
+            {showRunning && monthChartMode === "power" ? (
+              <MonthRunningPower key={monthChartKey} days={monthChartData} monthStart={monthStart}
+                demo={publicDemo} onActivityUpdated={onMonthDetailUpdated} />
+            )
+            : showRunning && monthChartMode === "zones" ? (
+              <MonthHeartRateZones key={monthChartKey} monthStart={monthStart}
+                calendarDays={monthChartData} demo={publicDemo} onActivityUpdated={onMonthDetailUpdated} />
             ) : <PeriodTrends data={monthChartData} periodLabel={`Дни · ${monthNames[chartMonth]} ${chartYear}`}
               showRunning={showRunning} showStrength={showStrength} showCycling={showCycling}
               periodSummary={{
@@ -482,6 +502,8 @@ function CalendarPeriodExplorer({
             onMarkDeload={onMarkDeload}
             syncBusy={busy}
             forecast={weather?.days}
+            onActivityUpdated={onMonthDetailUpdated}
+            zonesRevision={planRevision}
             selectedDayDetails={selection.type === "day" && (
               <div ref={linkedDetails} className="col-span-7 min-w-0 scroll-mt-3 rounded-xl border border-[#34424a] bg-[#19242b] p-3">
                 <SelectedDayWeather day={weather?.days?.[localDateKey(periodStart)]} />

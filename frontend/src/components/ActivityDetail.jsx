@@ -82,6 +82,7 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
           points: Array.isArray(result.points) ? result.points : [],
           route: Array.isArray(result.route) ? result.route : [],
           sampleCount: Number(result.sample_count || 0),
+          runningPower: result.running_power,
           trackAvailable: Boolean(result.track_available),
           trackMessage: result.track_message || "",
         };
@@ -142,6 +143,13 @@ function ActivitySummary({ activity, detailCache, onActivityUpdated }) {
           />
         )}
       </div>
+      {detail?.runningPower && (
+        <p className="mt-2 text-xs text-slate-300">
+          Мощность · {detail.runningPower.source === "stryd" ? "Stryd" : "Garmin FIT"}
+          {" · "}средняя <b>{detail.runningPower.average_watts} Вт</b>
+          {" · "}пик <b>{detail.runningPower.max_watts} Вт</b>
+        </p>
+      )}
       {detailLoading && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{refreshCount > 0 ? "Обновляю детали из Garmin…" : "Загружаю детали…"}</p>}
       {detailError && <p className="splits-unavailable mt-[11px] mx-0 mb-0 text-[color:var(--muted)] text-[11px]">{detailError}</p>}
       {detail?.description && (

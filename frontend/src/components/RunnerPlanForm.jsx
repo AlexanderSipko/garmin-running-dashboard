@@ -27,6 +27,42 @@ function withZoneEnds(plan) {
 
 const field = "min-w-0 rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm";
 
+function ZoneFields({ title, description, prefix, unit, min, max, plan, setPlan }) {
+  return (
+    <fieldset className="min-w-0 rounded-xl border border-slate-700 p-3">
+      <legend className="px-1 text-sm font-semibold">{title}</legend>
+      <p className="mb-2 text-xs text-slate-300">
+        {description}
+      </p>
+      <ul className="grid gap-2">
+        {zoneGuide.map(([label, color], index) => (
+          <li key={label} className={`grid grid-cols-[minmax(0,1fr)_minmax(0,4.6rem)_minmax(0,4.6rem)] items-center gap-2 rounded-lg border-l-2 bg-slate-950/40 p-2 ${color}`}>
+            <div className="min-w-0 text-xs [overflow-wrap:anywhere]">
+              <b className="block">Z{index + 1}</b>
+              <span className="text-slate-300">{label}</span>
+            </div>
+            {[[`${prefix}_starts`, "От"], [`${prefix}_ends`, "До"]].map(([key, caption]) => (
+              <label key={key} className="grid min-w-0 gap-1 text-xs">
+                {caption}
+                <input aria-label={`Z${index + 1}: ${caption.toLowerCase()}, ${unit}`}
+                  className={`${field} w-full px-2`} type="number" inputMode="numeric" min={min} max={max} step={1}
+                  value={plan[key]?.[index] ?? ""}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setPlan((current) => ({
+                      ...current,
+                      [key]: Array.from({ length: 5 }, (_, i) => i === index ? value : current[key]?.[i] ?? ""),
+                    }));
+                  }} />
+              </label>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </fieldset>
+  );
+}
+
 export default function RunnerPlanForm({ request, onSaved }) {
   const [plan, setPlan] = useState(null);
   const [savedPlan, setSavedPlan] = useState(null);
@@ -64,11 +100,31 @@ export default function RunnerPlanForm({ request, onSaved }) {
       setFeedback("Заполни диапазоны всех пяти зон по возрастанию без пересечений или оставь все поля пустыми.");
       return;
     }
+    const powerStartInputs = readZones("power_zone_starts");
+    const powerEndInputs = readZones("power_zone_ends");
+    const powerStarts = powerStartInputs.map(Number);
+    const powerEnds = powerEndInputs.map(Number);
+    const powerEmpty = [...powerStartInputs, ...powerEndInputs].every((value) => value === "");
+    if (!powerEmpty && (powerStartInputs.includes("") || powerEndInputs.includes("") ||
+        powerStarts.some((start, index) => start > powerEnds[index] || (index > 0 && start <= powerEnds[index - 1])))) {
+      setError(true);
+      setFeedback("Заполни диапазоны всех пяти зон мощности без пересечений или оставь поля пустыми.");
+      return;
+    }
     setBusy(true);
     setFeedback("");
     setError(false);
     try {
-      const saved = await request("/plan", { method: "PUT", body: JSON.stringify({ ...plan, heart_rate_zone_starts: empty ? [] : starts, heart_rate_zone_ends: empty || legacy ? [] : ends }) });
+      const saved = await request("/plan", {
+        method: "PUT",
+        body: JSON.stringify({
+          ...plan,
+          heart_rate_zone_starts: empty ? [] : starts,
+          heart_rate_zone_ends: empty || legacy ? [] : ends,
+          power_zone_starts: powerEmpty ? [] : powerStarts,
+          power_zone_ends: powerEmpty ? [] : powerEnds,
+        }),
+      });
       setSavedPlan(saved);
       setPlan(withZoneEnds(saved));
       onSaved();
@@ -133,37 +189,10 @@ export default function RunnerPlanForm({ request, onSaved }) {
             <textarea className={field} name="preferences" value={plan.preferences} maxLength={360} rows={2}
               onChange={change} placeholder="Бегаю четыре раза в неделю. Длительная по воскресеньям." />
           </label>
-          <fieldset className="min-w-0 rounded-xl border border-slate-700 p-3">
-            <legend className="px-1 text-sm font-semibold">Пульсовые зоны для бега</legend>
-            <p className="mb-2 text-xs text-slate-300">
-              Перенеси нижнюю и верхнюю границы беговых зон из Garmin в уд/мин.
-            </p>
-            <ul className="grid gap-2">
-              {zoneGuide.map(([label, color], index) => (
-                <li key={label} className={`grid grid-cols-[minmax(0,1fr)_minmax(0,4.6rem)_minmax(0,4.6rem)] items-center gap-2 rounded-lg border-l-2 bg-slate-950/40 p-2 ${color}`}>
-                  <div className="min-w-0 text-xs [overflow-wrap:anywhere]">
-                    <b className="block">Z{index + 1}</b>
-                    <span className="text-slate-300">{label}</span>
-                  </div>
-                  {[["heart_rate_zone_starts", "От"], ["heart_rate_zone_ends", "До"]].map(([key, caption]) => (
-                    <label key={key} className="grid min-w-0 gap-1 text-xs">
-                      {caption}
-                      <input aria-label={`Z${index + 1}: ${caption.toLowerCase()}, уд/мин`}
-                        className={`${field} w-full px-2`} type="number" inputMode="numeric" min={30} max={250} step={1}
-                        value={plan[key]?.[index] ?? ""}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setPlan((current) => ({
-                            ...current,
-                            [key]: Array.from({ length: 5 }, (_, i) => i === index ? value : current[key]?.[i] ?? ""),
-                          }));
-                        }} />
-                    </label>
-                  ))}
-                </li>
-              ))}
-            </ul>
-          </fieldset>
+          <ZoneFields title="Пульсовые зоны для бега" description="Перенеси границы из Garmin в уд/мин."
+            prefix="heart_rate_zone" unit="уд/мин" min={30} max={250} plan={plan} setPlan={setPlan} />
+          <ZoneFields title="Зоны мощности для бега" description="Перенеси нижнюю и верхнюю границы беговых зон в ваттах."
+            prefix="power_zone" unit="Вт" min={0} max={3000} plan={plan} setPlan={setPlan} />
           <button className="w-fit rounded-lg border border-[#806044] bg-[#3a3025] px-3 py-2 text-sm font-semibold text-[#f3bc7f] disabled:opacity-50"
             type="submit" disabled={busy}>{busy ? "Сохраняю…" : "Сохранить план"}</button>
         </form>

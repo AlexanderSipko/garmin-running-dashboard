@@ -399,7 +399,8 @@ class Database:
                 previous = json.loads(row[0]) if row else {}
                 if track_failed:
                     detail.pop("heart_rate_seconds_by_bpm", None)
-                    for field in (*TRACK_FIELDS, "track_cached_at", "track_archived"):
+                    for field in (*TRACK_FIELDS, "track_cached_at", "track_archived", "running_power",
+                                  "running_power_seconds_by_watt"):
                         if field in previous:
                             detail[field] = previous[field]
                     if previous.get("points") or previous.get("route"):

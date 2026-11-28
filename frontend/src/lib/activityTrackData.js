@@ -9,6 +9,9 @@ export function normalizeTrackPoints(points) {
       heart_rate_bpm: point.heart_rate_bpm != null && Number.isFinite(Number(point.heart_rate_bpm))
         ? Number(point.heart_rate_bpm)
         : null,
+      power_watts: typeof point.power_watts === "number" && Number.isFinite(point.power_watts)
+        ? point.power_watts
+        : null,
     }))
     .filter((point) => Number.isFinite(point.distance_meters) && point.distance_meters >= 0)
     .sort((first, second) => first.distance_meters - second.distance_meters);

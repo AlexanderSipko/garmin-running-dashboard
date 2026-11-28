@@ -1,5 +1,6 @@
 """Read-only access to Garmin Personal API."""
 from pathlib import Path
+from collections import Counter
 import math
 import time
 import zipfile
@@ -8,6 +9,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from fitparse import FitFile
+from fitparse.records import DevFieldDefinition
 from garmin_personal_api import GarminPersonalApiClient, PersonalApiAuthenticator
 from settings import settings
 from heart_rate_distribution import seconds_by_bpm
@@ -98,9 +100,30 @@ def _split_rows(activity: dict[str, Any]) -> list[dict[str, Any]]:
     return cleaned
 
 
+def _fit_power_fields(message) -> dict:
+    readings = {}
+    for field in message.fields:
+        name = str(field.name).lower().replace("_", " ").replace("-", " ")
+        name = " ".join(name.split())
+        developer = isinstance(field.field_def, DevFieldDefinition)
+        if name in {"stryd power", "stryd running power", "power stryd"}:
+            priority, source = 0, "stryd"
+        elif not developer and name == "power":
+            priority, source = 1, "fit"
+        elif developer and name in {"power", "running power", "run power"} and str(field.units).lower() in {"w", "watt", "watts"}:
+            priority, source = 2, "fit"
+        else:
+            continue
+        value = field.value
+        if isinstance(value, (int, float)) and math.isfinite(value) and value >= 0:
+            key = (priority, name, getattr(field.field_def, "dev_data_index", -1), field.def_num, source)
+            readings[key] = value
+    return readings
+
+
 def _fit_track_rows(
     archive_bytes: bytes, max_points: int = 1500,
-) -> tuple[list[dict[str, Any]], int, list[tuple[float, float]], dict[str, int]]:
+) -> tuple[list[dict[str, Any]], int, list[tuple[float, float]], dict[str, int], dict | None, dict[str, float]]:
     """Decode GPS-like record samples from Garmin's zipped original FIT file."""
     with zipfile.ZipFile(BytesIO(archive_bytes)) as archive:
         fit_member = next(
@@ -108,7 +131,7 @@ def _fit_track_rows(
             None,
         )
         if fit_member is None:
-            return [], 0, [], {}
+            return [], 0, [], {}, None, {}
         if fit_member.file_size > 50 * 1024 * 1024:
             raise ValueError("Garmin FIT file is unexpectedly large")
         fit_bytes = archive.read(fit_member)
@@ -119,9 +142,15 @@ def _fit_track_rows(
     first_timestamp = None
     previous_timestamp = None
     previous_distance = 0.0
+    power_samples: dict[tuple, list[float]] = {}
+    track_power = []
+    timed_power = []
 
     for message in fit_file.get_messages("record"):
         fields = message.get_values()
+        readings = _fit_power_fields(message)
+        for key, watts in readings.items():
+            power_samples.setdefault(key, []).append(watts)
         latitude = fields.get("position_lat")
         longitude = fields.get("position_long")
         if latitude is not None and longitude is not None:
@@ -134,6 +163,7 @@ def _fit_track_rows(
                 if not route or point != route[-1]:
                     route.append(point)
         timestamp = fields.get("timestamp")
+        timed_power.append((timestamp, readings))
         distance = fields.get("distance")
         speed = fields.get("enhanced_speed") or fields.get("speed")
         heart_rate = fields.get("heart_rate")
@@ -172,7 +202,25 @@ def _fit_track_rows(
             "cadence_spm": round(float(cadence)) if cadence is not None else None,
             "elevation_meters": round(float(altitude), 1) if altitude is not None else None,
         })
+        track_power.append(readings)
 
+    power = None
+    power_seconds = Counter()
+    usable = [key for key, values in power_samples.items() if max(values) > 0]
+    if usable:
+        key = min(usable, key=lambda item: (item[0], -len(power_samples[item])))
+        values = power_samples[key]
+        power = {"average_watts": round(sum(values) / len(values)), "max_watts": round(max(values)),
+                 "samples": len(values), "source": key[-1]}
+        for row, readings in zip(rows, track_power):
+            if key in readings:
+                row["power_watts"] = round(readings[key], 1)
+        for (start, first), (end, second) in zip(timed_power, timed_power[1:]):
+            if start is None or end is None or not first.get(key) or not second.get(key):
+                continue
+            seconds = (end - start).total_seconds()
+            if 0 < seconds <= 15:
+                power_seconds[str(math.floor(first[key]))] += seconds
     heart_rate_seconds = seconds_by_bpm(rows)
     total_count = len(rows)
     if total_count > max_points:
@@ -185,7 +233,7 @@ def _fit_track_rows(
     if len(route) > max_route_points:
         last = len(route) - 1
         route = [route[round(index * last / (max_route_points - 1))] for index in range(max_route_points)]
-    return rows, total_count, route, heart_rate_seconds
+    return rows, total_count, route, heart_rate_seconds, power, dict(power_seconds)
 
 
 def _records(payload: Any) -> list[dict[str, Any]]:
@@ -351,11 +399,11 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         track_refresh_failed = False
         try:
             file_bytes = client.download_activity(activity_id)
-            points, sample_count, route, heart_rate_seconds = _fit_track_rows(file_bytes)
+            points, sample_count, route, heart_rate_seconds, power, power_seconds = _fit_track_rows(file_bytes)
             track_message = "" if points else "В исходном файле Garmin нет точек записи FIT."
         except Exception:
             track_refresh_failed = True
-            points, sample_count, route, heart_rate_seconds = [], 0, [], {}
+            points, sample_count, route, heart_rate_seconds, power, power_seconds = [], 0, [], {}, None, {}
             track_message = "Garmin не вернул исходный FIT-файл этой тренировки."
 
     return {
@@ -364,6 +412,8 @@ def get_running_activity_detail(activity_id: str, *, key: str, cache_path: Path)
         "splits": splits,
         "points": points,
         "heart_rate_seconds_by_bpm": heart_rate_seconds,
+        "running_power": power,
+        **({"running_power_seconds_by_watt": power_seconds} if not track_refresh_failed else {}),
         "route": route,
         "sample_count": sample_count,
         "track_refresh_failed": track_refresh_failed,

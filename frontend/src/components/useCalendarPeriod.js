@@ -139,6 +139,8 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
         runKm: summary ? Number(summary.runKm.toFixed(1)) : 0,
         pace: averageRunningPace(summary),
         avgHr: summary?.hrWeight ? Math.round(summary.hrSeconds / summary.hrWeight) : null,
+        avgPower: summary?.powerSamples ? Math.round(summary.powerSum / summary.powerSamples) : null,
+        powerRunCount: summary?.powerRunCount || 0,
         cyclingKm: summary?.cyclingKm || 0,
         strengthCount: summary?.strengthCount || 0,
       };

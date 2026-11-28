@@ -2,6 +2,7 @@
 
 import asyncio
 from coach_memory import memory_proposal
+from running_power import power_zone_bounds, power_zone_durations, running_power_for_period
 from copy import deepcopy
 import json
 from datetime import date, timedelta
@@ -90,7 +91,7 @@ class GarminCoachTools:
 
         @self.server.tool()
         def get_garmin_activity(activity_id: str) -> dict:
-            """Look up a known account activity and its splits. Fetch splits from Garmin only if no saved detail exists."""
+            """Read activity splits and saved running power and zone times. Fetch splits if no saved detail exists."""
             activity = next((
                 row for row in store.get("activities", []) if str(row.get("id")) == activity_id
             ), None)
@@ -119,8 +120,15 @@ class GarminCoachTools:
                         source = "garmin_unavailable"
 
             zones = plan_context(store.get("runner_plan"), date.today()).get("running_heart_rate_zones_bpm")
+            power = (saved or {}).get("running_power") or activity.get("running_power")
+            power_zones = power_zone_bounds(store.get("runner_plan")) if activity_kind(activity) == "run" else []
+            power_histogram = (saved or {}).get("running_power_seconds_by_watt")
+            power_times = power_zone_durations(power_histogram, power_zones) if power_histogram and power_zones else None
             return {
                 "heart_rate_zone_times": running_zone_times(saved, zones) if activity_kind(activity) == "run" else None,
+                **({"running_power": power} if power else {}),
+                **({"power_zone_times": {**power_times, "source": "fit_samples",
+                                         "bounds_watts": power_zones}} if power_times else {}),
                 "average_heart_rate_bpm": activity.get("avg_hr_bpm"),
                 "max_heart_rate_bpm": activity.get("max_hr_bpm"),
                 "source": source,
@@ -156,6 +164,30 @@ class GarminCoachTools:
             result = {"week": summarize(week_start)}
             if compare_previous and (week_start - date.min).days >= 7:
                 result["previous_week"] = summarize(week_start - timedelta(days=7))
+            return result
+
+        @self.server.tool()
+        def get_weekly_running_power(week_start: date, compare_previous: bool = False) -> dict:
+            """Get time in running power zones and coverage for a Monday-start week. Uses saved FIT only."""
+            if week_start.weekday() != 0:
+                return {"error": "Укажи понедельник нужной недели."}
+            today = date.today()
+            if week_start > today:
+                return {"error": "За будущую неделю нет фактических данных."}
+            bounds = power_zone_bounds(store.get("runner_plan"))
+            if not bounds:
+                return {"error": "Зоны мощности для бега не заполнены в настройках."}
+            end = min(week_start + timedelta(days=6), today)
+
+            def summarize(start: date, end: date) -> dict:
+                result = running_power_for_period(store, start, end, read_details)
+                result.pop("missing_activity_ids", None)
+                return {"from": start.isoformat(), "to": end.isoformat(), **result}
+
+            result = {"week": summarize(week_start, end), "bounds_watts": bounds, "source": "fit_samples"}
+            if compare_previous and (week_start - date.min).days >= 7:
+                offset = timedelta(days=7)
+                result["previous_week"] = summarize(week_start - offset, end - offset)
             return result
 
         @self.server.tool()

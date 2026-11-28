@@ -110,6 +110,7 @@ def analyze_period(
             "avg_hr_bpm": activity.get("avg_hr_bpm"),
             "max_hr_bpm": activity.get("max_hr_bpm"),
             "garmin_description": str(activity.get("description") or "")[:500],
+            **({"running_power": activity["running_power"]} if activity.get("running_power") else {}),
         }
         question = (
             f"Фокус разбора — тренировка Garmin ID {activity_id} за {start.isoformat()}. "
