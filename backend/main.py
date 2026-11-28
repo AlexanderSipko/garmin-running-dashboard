@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from activity_retention import archive_expired_track, retention_cutoff
@@ -22,7 +22,8 @@ from weekly_heart_rate import running_zones_for_period, weekly_running_zones
 from coach_usage import TokenUsage, record_daily_usage
 from coach_plan_dialog import TRAINING_TABLE, confirmed_plan_reply, is_plan_request, plan_move_reply
 from coach_context import is_running, strength_summary
-from coach_history import chat_history_page
+from coach_history import chat_history_page, prepare_chat_history, recent_chat_messages
+from coach_memory import MEMORY_LIMITS, memory_state, wants_memory_display
 from coach_tools import GarminCoachTools
 from coach_analysis import analyze_period as run_period_analysis
 from dashboard_data import build_dashboard, dashboard_weekly_volume, merge_activities, monday_of, parse_date
@@ -34,7 +35,7 @@ from store import Database
 from strength_notes import StrengthNote, get_strength_note, refresh_strength_activity, store_strength_note, strength_activity
 from training_week import (
     WeekPreferences, build_week_draft, change_week_distance, include_calendar_sessions,
-    move_week_session, save_calendar_session, week_progress,
+    mark_week_session_rest, move_week_session, save_calendar_session, trim_week_rest_tail, week_progress,
 )
 
 database = Database(settings.database_url, settings.sqlite_path)
@@ -46,8 +47,43 @@ COACH_CHAT_TURNS = 60
 account_id: ContextVar[str] = ContextVar("account_id")
 
 
+def merge_upcoming_calendar_sessions(store: dict[str, Any], today: date) -> None:
+    active = store.get("training_week_active")
+    rows = {row["date"]: row for row in (active or {}).get("sessions", [])}
+    calendar = store.get("calendar_training_sessions", {})
+    dates = [key for key in calendar if key >= today.isoformat() and key not in rows]
+    if not dates:
+        return
+    for key in dates:
+        rows[key] = {field: value for field, value in calendar.pop(key).items()
+                     if field not in {"revision", "standalone"}}
+    store["training_week_active"] = {
+        **(active or {"id": uuid4().hex}),
+        "sessions": [rows[key] for key in sorted(rows)],
+        "revision": (active or {}).get("revision", 0) + 1,
+    }
+    store["calendar_plan_revision"] = store.get("calendar_plan_revision", 0) + 1
+    store.pop("coach_daily", None)
+
+
 def read_store() -> dict[str, Any]:
-    return database.read(account_id.get())
+    user_id = account_id.get()
+    store = database.read(user_id)
+    today = date.today()
+    history = store.get("coach_chat_history", [])
+    planned_dates = {row["date"] for row in (store.get("training_week_active") or {}).get("sessions", [])}
+    has_separate_sessions = any(key >= today.isoformat() and key not in planned_dates
+                                for key in store.get("calendar_training_sessions", {}))
+    if (has_separate_sessions or len(recent_chat_messages(history, today)) != len(history)
+            or any("exchange_id" not in row for row in history)):
+        def prepare(current: dict[str, Any]) -> None:
+            nonlocal store
+            prepare_chat_history(current, today)
+            merge_upcoming_calendar_sessions(current, today)
+            store = current
+
+        database.update(user_id, prepare)
+    return store
 
 
 def update_store(update: Callable[[dict[str, Any]], None]) -> None:
@@ -279,7 +315,8 @@ def coach_cache_revision(store: dict[str, Any]) -> list:
     active_week = store.get("training_week_active") or {}
     return [store.get("synced_at"), store.get("wellness_synced_at"), store.get("runner_plan"),
             active_week.get("id"), active_week.get("revision", 0), store.get("deload_weeks"),
-            store.get("calendar_plan_revision", 0), store.get("review_revision", 0)]
+            store.get("calendar_plan_revision", 0), store.get("review_revision", 0),
+            store.get("coach_history_revision", 0), memory_state(store)["revision"]]
 
 
 class WeekPlanRequest(BaseModel):
@@ -343,6 +380,10 @@ class WeekMoveRequest(WeekEditRequest):
     to_date: date
 
 
+class WeekRestRequest(WeekEditRequest):
+    session_date: date
+
+
 class WeekDistanceRequest(WeekEditRequest):
     session_date: date
     distance_km: float = Field(ge=0.1, allow_inf_nan=False)
@@ -404,14 +445,14 @@ def propose_training_week(request: WeekDraftRequest) -> dict[str, Any]:
 
     def save_draft(store: dict[str, Any]) -> None:
         state = training_week_state(store, day)
-        if state["active"] and not state["recap"]:
-            raise HTTPException(409, "Сначала заверши текущий план недели.")
         if state["draft"]:
             return
+        active = state["active"]
+        last_day = date.fromisoformat(active["sessions"][-1]["date"]) if active else None
         try:
             draft = build_week_draft(
                 store.get("activities", []), store.get("runner_plan") or {}, day, request.preferences, store.get("deload_weeks", {}),
-                earliest_start=date.fromisoformat(state["recap"]["to"]) + timedelta(days=1) if state["recap"] else None,
+                earliest_start=last_day + timedelta(days=1) if last_day else None,
             )
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
@@ -430,19 +471,28 @@ def approve_training_week(request: WeekApprovalRequest) -> dict[str, Any]:
 
     def approve(current: dict[str, Any]) -> None:
         active = current.get("training_week_active")
-        if active and active["id"] == request.draft_id:
+        if active and request.draft_id in (active["id"], active.get("last_added_draft_id")):
             return
         state = training_week_state(current, day)
-        if state["active"] and not state["active"]["expired"]:
-            raise HTTPException(409, "Уже есть активный недельный план.")
         draft = current.get("training_week_draft")
         if not state["draft"] or draft["id"] != request.draft_id:
             raise HTTPException(409, "Черновик изменился или устарел. Сформируй новый план.")
-        if active:
-            current.setdefault("training_week_history", []).append(active)
+        extending = active is not None and not state["active"]["expired"]
+        if extending and draft["sessions"][0]["date"] <= active["sessions"][-1]["date"]:
+            raise HTTPException(409, "Черновик пересекается с текущим планом. Сформируй его заново.")
         calendar_sessions = current.get("calendar_training_sessions", {})
         approved = include_calendar_sessions(current.pop("training_week_draft"), calendar_sessions)
-        current["training_week_active"] = approved
+        if extending:
+            current["training_week_active"] = {
+                **active,
+                "sessions": active["sessions"] + approved["sessions"],
+                "revision": active.get("revision", 0) + 1,
+                "last_added_draft_id": request.draft_id,
+            }
+        else:
+            if active:
+                current.setdefault("training_week_history", []).append(active)
+            current["training_week_active"] = approved
         for session in approved["sessions"]:
             calendar_sessions.pop(session["date"], None)
         current.pop("coach_daily", None)
@@ -451,7 +501,7 @@ def approve_training_week(request: WeekApprovalRequest) -> dict[str, Any]:
     return training_week_state(read_store(), day)
 
 
-def edit_training_week(request: WeekEditRequest, edit: Callable[[dict, list[dict]], dict]) -> dict[str, Any]:
+def edit_training_week(request: WeekEditRequest, edit: Callable[[dict, list[dict]], dict | None]) -> dict[str, Any]:
     validate_plan_day(request.day)
 
     def save_edit(store: dict[str, Any]) -> None:
@@ -463,7 +513,10 @@ def edit_training_week(request: WeekEditRequest, edit: Callable[[dict, list[dict
         except ValueError as error:
             raise HTTPException(409, str(error)) from None
         if updated is not active:
-            store["training_week_active"] = updated
+            if updated is None:
+                store.pop("training_week_active", None)
+            else:
+                store["training_week_active"] = updated
             store.pop("coach_daily", None)
 
     update_store(save_edit)
@@ -474,6 +527,20 @@ def edit_training_week(request: WeekEditRequest, edit: Callable[[dict, list[dict
 def move_training_week(request: WeekMoveRequest) -> dict[str, Any]:
     return edit_training_week(request, lambda plan, activities: move_week_session(
         plan, activities, request.day, request.from_date, request.to_date,
+    ))
+
+
+@app.patch("/api/coach/week/rest-tail")
+def trim_training_week_rest_tail(request: WeekRestRequest) -> dict[str, Any]:
+    return edit_training_week(request, lambda plan, activities: trim_week_rest_tail(
+        plan, activities, request.day, request.session_date,
+    ))
+
+
+@app.patch("/api/coach/week/rest")
+def rest_training_week_session(request: WeekRestRequest) -> dict[str, Any]:
+    return edit_training_week(request, lambda plan, activities: mark_week_session_rest(
+        plan, activities, request.day, request.session_date,
     ))
 
 
@@ -503,10 +570,9 @@ def save_training_calendar_session(request: CalendarSessionRequest) -> dict[str,
         except ValueError as error:
             raise HTTPException(409, str(error)) from None
         store.pop("coach_daily", None)
-        if in_week:
-            result["active"] = training_week_state(store, request.day)["active"]
-        else:
-            result["session"] = store["calendar_training_sessions"][request.session_date.isoformat()]
+        if not in_week:
+            merge_upcoming_calendar_sessions(store, request.day)
+        result["active"] = training_week_state(store, request.day)["active"]
 
     update_store(save)
     return result
@@ -572,6 +638,39 @@ def coach_usage(day: date) -> dict:
     return read_store().get("coach_usage_by_day", {}).get(day.isoformat(), TokenUsage().as_dict())
 
 
+class CoachMemoryRequest(BaseModel):
+    markdown: str = Field(max_length=max(MEMORY_LIMITS))
+    revision: int = Field(ge=0)
+    limit_chars: int | None = None
+
+
+@app.get("/api/coach/memory")
+def get_coach_memory() -> dict:
+    return {**memory_state(read_store()), "limit_options": MEMORY_LIMITS}
+
+
+@app.put("/api/coach/memory")
+def save_coach_memory(request: CoachMemoryRequest) -> dict:
+    result = {}
+
+    def save(store: dict[str, Any]) -> None:
+        current = memory_state(store)
+        if request.revision != current["revision"]:
+            raise HTTPException(409, "Память изменилась. Открой её заново перед сохранением.")
+        limit_chars = request.limit_chars if request.limit_chars is not None else current["limit_chars"]
+        if limit_chars not in MEMORY_LIMITS:
+            raise HTTPException(422, "Выбери один из доступных лимитов памяти.")
+        markdown = request.markdown.strip()
+        if len(markdown) > limit_chars:
+            raise HTTPException(422, f"Сократи текст до {limit_chars} символов или увеличь лимит.")
+        result.update(markdown=markdown, revision=current["revision"] + 1, limit_chars=limit_chars)
+        store["coach_memory"] = result
+        store.pop("coach_daily", None)
+
+    update_store(save)
+    return {**result, "limit_options": MEMORY_LIMITS}
+
+
 @app.get("/api/coach/chat")
 def coach_chat_history(day: date | None = None, before: date | None = None) -> dict[str, Any]:
     messages = read_store().get("coach_chat_history", [])[-COACH_CHAT_TURNS:]
@@ -582,12 +681,25 @@ def coach_chat_history(day: date | None = None, before: date | None = None) -> d
 
 @app.post("/api/coach/chat")
 def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
+    asked_at = datetime.now(timezone.utc).isoformat()
     question = request.question.strip()
     if not question:
         raise HTTPException(422, "Напиши вопрос консультанту.")
     today = request.today or date.today()
     validate_plan_day(today)
     store = read_store()
+    if request.activity_id is None and wants_memory_display(question):
+        answer = memory_state(store)["markdown"] or "В памяти консультанта пока пусто."
+        return {
+            "answer": answer,
+            "model": "coach-memory",
+            "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            "messages": [
+                {"role": "user", "content": question, "created_at": asked_at},
+                {"role": "assistant", "content": answer, "model": "coach-memory",
+                 "created_at": datetime.now(timezone.utc).isoformat()},
+            ],
+        }
     active_plan = store.get("training_week_active")
     activities = store.get("activities", [])
 
@@ -614,7 +726,6 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
             question=question,
             daily=request.daily and not activity_day,
             focus_date=activity_day or request.focus_date,
-            chat_summary=None if activity_day else request.summary,
             plan_day=today,
             store=store,
             activity_id=request.activity_id,
@@ -623,7 +734,12 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
             result["answer"] = confirmed_plan_reply(active_plan, activities, today)
 
     focus_day = (activity_day or request.focus_date or request.start_date).isoformat()
-    exchange_dates = {"focus_date": focus_day, "sent_day": today.isoformat()}
+    exchange_dates = {"focus_date": focus_day, "sent_day": today.isoformat(), "exchange_id": uuid4().hex}
+    messages = [
+        {"role": "user", "content": question, "created_at": asked_at, **exchange_dates},
+        {"role": "assistant", "content": result["answer"], "usage": result["usage"],
+         "model": result["model"], "created_at": datetime.now(timezone.utc).isoformat(), **exchange_dates},
+    ]
 
     analysis = None
     if activity_day and request.save_activity_analysis:
@@ -632,16 +748,26 @@ def coach_chat(request: CoachChatRequest) -> dict[str, Any]:
 
     def save_turns(store: dict[str, Any]) -> None:
         history = store.get("coach_chat_history", [])
-        history.extend([
-            {"role": "user", "content": question, **exchange_dates},
-            {"role": "assistant", "content": result["answer"], "usage": result["usage"], **exchange_dates},
-        ])
+        history.extend(messages)
         store["coach_chat_history"] = history[-COACH_CHAT_TURNS:]
         if analysis is not None:
             store.setdefault("coach_activity_analyses", {})[str(request.activity_id)] = analysis
 
     update_store(save_turns)
-    return {**result, **({"activity_analysis": analysis} if analysis is not None else {})}
+    return {**result, "messages": messages, **({"activity_analysis": analysis} if analysis is not None else {})}
+
+
+@app.delete("/api/coach/chat/{exchange_id}", status_code=204, response_class=Response)
+def delete_coach_exchange(exchange_id: str):
+    def delete(store: dict[str, Any]) -> None:
+        history = store.get("coach_chat_history", [])
+        remaining = [row for row in history if row.get("exchange_id") != exchange_id]
+        if len(remaining) != len(history):
+            store["coach_chat_history"] = remaining
+            store["coach_history_revision"] = store.get("coach_history_revision", 0) + 1
+            store.pop("coach_daily", None)
+
+    update_store(delete)
 
 
 @app.get("/api/dashboard")

@@ -38,6 +38,8 @@ function CalendarPeriodExplorer({
     showRunning, showStrength, chartYear, chartMonth, monthlySummary, monthChartData,
     yearChartData, selectionLabel, selectDay, dayActivities, dayRuns, dayPlan,
   } = useCalendarPeriod({ activities, pagePath, publicDemo, plannedSessions, deloadWeeks, viewScope });
+  const activePlanRow = plannedSessions?.find((session) => session.current_plan);
+  const calendarPlanVersion = activePlanRow ? `${activePlanRow.plan_id}:${activePlanRow.revision}` : "no-plan";
 
   const [monthZonesOpen, setMonthZonesOpen] = useState(false);
   const [activityReview, setActivityReview] = useState(null);
@@ -178,6 +180,7 @@ function CalendarPeriodExplorer({
               periodEnd={periodEnd}
               label={selectionLabel}
               syncedAt={syncedAt}
+              calendarPlanVersion={calendarPlanVersion}
               onTrainingWeekChanged={onTrainingWeekChanged}
             />}
           </div>
@@ -483,7 +486,11 @@ function CalendarPeriodExplorer({
               <div ref={linkedDetails} className="col-span-7 min-w-0 scroll-mt-3 rounded-xl border border-[#34424a] bg-[#19242b] p-3">
                 <SelectedDayWeather day={weather?.days?.[localDateKey(periodStart)]} />
                 {!publicDemo && <DayTrainingPlan key={localDateKey(periodStart)} date={localDateKey(periodStart)} session={dayPlan}
-                  hasActivities={periodActivities.length > 0} onPlanChanged={onTrainingWeekChanged} />}
+                  hasActivities={periodActivities.length > 0}
+                  canTrim={(plannedSessions ?? []).every((session) => (
+                    !session.current_plan || session.date < dayPlan?.date || session.kind === "rest"
+                  ))}
+                  onPlanChanged={onTrainingWeekChanged} />}
                 {(!dayPlan || dayActivities.length > 0) && (
                   <>
                     {(publicDemo || dayRuns.length > 1 || dayActivities.length === 0) && <DaySummary activities={dayRuns} date={periodStart} />}

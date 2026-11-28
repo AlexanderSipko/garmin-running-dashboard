@@ -6,9 +6,10 @@ from typing import Any, Callable
 
 from fastapi import HTTPException
 
-from coach import IncompleteCoachAnswer, RunningCoach
+from coach import IncompleteCoachAnswer, RunningCoach, has_tool_protocol
 from coach_context import activities_between, daily_coach_context, is_running, strength_summary, wellness_between
 from coach_tools import GarminCoachTools
+from coach_memory import memory_state, wants_memory_update
 from providers.gigachat import GigaChatError
 from providers.openai import OpenAIError
 from runner_plan import plan_context
@@ -64,10 +65,14 @@ def analyze_period(
     if question:
         tools = account_coach_tools(store)
         tools.review_only = activity_id is not None
+        tools.allow_memory = not tools.review_only and wants_memory_update(question)
         history = store.get("coach_chat_history", [])
         conversation = [
             turn for turn in history
-            if turn["role"] != "assistant" or any(char.isalpha() for char in turn.get("content", ""))
+            if turn["role"] != "assistant" or (
+                not has_tool_protocol(turn.get("content", ""))
+                and any(char.isalpha() for char in turn.get("content", ""))
+            )
         ][-(6 if activity_id is not None else 8):]
         if chat_summary:
             conversation = [{"role": "assistant", "content": chat_summary[:450]}, *conversation]
@@ -76,6 +81,7 @@ def analyze_period(
         conversation = [
             turn for turn in store.get("coach_chat_history", [])
             if turn.get("focus_date") == day_key
+            and (turn["role"] != "assistant" or not has_tool_protocol(turn.get("content", "")))
         ][-4:]
 
     activity_summary = {
@@ -153,6 +159,7 @@ def analyze_period(
             runner_plan=plan_context(store.get("runner_plan"), reference_day),
             training_week=week_context(store.get("training_week_active"), rows, plan_day or reference_day),
             tools=tools,
+            memory_markdown=memory_state(store)["markdown"],
         )
     except IncompleteCoachAnswer:
         raise HTTPException(502, "Модель не закончила ответ. Повтори запрос.") from None

@@ -181,7 +181,8 @@ export function useCalendarPeriod({ activities, pagePath, publicDemo, plannedSes
     : [];
   const dayRuns = dayActivities.filter((activity) => getActivityCategory(activity) === "running");
   const dayPlan = selection.type === "day"
-    ? plannedSessions?.find(({ date }) => date === localDateKey(periodStart))
+    ? (plannedSessions?.find(({ date, current_plan }) => current_plan && date === localDateKey(periodStart))
+      ?? plannedSessions?.find(({ date }) => date === localDateKey(periodStart)))
     : null;
 
   return {

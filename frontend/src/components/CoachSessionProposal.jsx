@@ -2,6 +2,10 @@ import { useState } from "react";
 import { localDateKey } from "../lib/wellnessDates";
 import { requestWeek, sessionLabels } from "./PlannedSessionEditor";
 
+const formatDate = new Intl.DateTimeFormat("ru-RU", {
+  weekday: "long", day: "numeric", month: "long",
+});
+
 export default function CoachSessionProposal({ proposal, onSave, onCancel }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -26,7 +30,7 @@ export default function CoachSessionProposal({ proposal, onSave, onCancel }) {
   return (
     <section className="grid gap-2 rounded-xl border border-[#52658b] bg-[#202b37] p-3 text-sm">
       <h3 className="font-bold text-[#c2cfff]">Предложение консультанта</h3>
-      <p>{proposal.session_date.split("-").reverse().join(".")} · {sessionLabels[proposal.kind]} · {proposal.distance_km} км</p>
+      <p>{formatDate.format(new Date(`${proposal.session_date}T12:00:00`))} · {sessionLabels[proposal.kind]} · {proposal.distance_km} км</p>
       {proposal.instruction && <p className="whitespace-pre-wrap break-words">{proposal.instruction}</p>}
       {error && <p role="alert" className="text-rose-300">{error}</p>}
       <div className="flex flex-wrap gap-2">

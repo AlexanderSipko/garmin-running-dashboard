@@ -2,6 +2,7 @@ import AdminDatabaseSize from "./AdminDatabaseSize";
 import RecoveryUsers from "./RecoveryUsers";
 import WeatherSettings from "./WeatherSettings";
 import RunnerPlanForm from "./RunnerPlanForm";
+import CoachMemorySettings from "./CoachMemory";
 import { useEffect, useRef, useState } from "react";
 import { Footprints, KeyRound, LogIn, LogOut, Settings2, UserPlus, X } from "lucide-react";
 
@@ -367,7 +368,18 @@ export default function AccountPanel({ account, onChange, onPlanSaved, weatherLo
                     <h3 id="personal-settings-title" className="px-1 text-sm font-semibold text-slate-300">Предпочтения</h3>
                     <WeatherSettings key={account.id} location={weatherLocation} request={accountRequest} onChange={onWeatherChange} />
                     <RunnerPlanForm key={account.id} request={accountRequest} onSaved={onPlanSaved} />
+                    <CoachMemorySettings key={`memory-${account.id}`} />
                   </section>
+                  <details className="rounded-xl border border-[#415157] p-3 text-sm text-slate-300 md:col-span-2">
+                    <summary className="cursor-pointer font-semibold">Как общаться с консультантом</summary>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                      <li>Предпочтение: «Запомни: по понедельникам и средам я бегаю в манеже».</li>
+                      <li>Правило: «Запиши правило: в сводке сначала расскажи, что получилось, потом — что поправить».</li>
+                      <li>Ошибка: «Запиши ошибку: день недели не совпал с датой. Перед предложением сверяй их».</li>
+                      <li>Просмотр: «Покажи свой Markdown».</li>
+                    </ul>
+                    <p className="mt-2">Нажми «Запомнить» в карточке, чтобы сохранить заметку. Исправить или очистить записи можно в «Памяти консультанта» выше.</p>
+                  </details>
                 </div>
               )}
             </div>

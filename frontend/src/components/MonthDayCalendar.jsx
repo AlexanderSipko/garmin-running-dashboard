@@ -212,7 +212,7 @@ export default function MonthDayCalendar({
               const weather = forecast?.[dateKey];
               const forecastLabel = weatherLabel(weather);
               const plan = planByDate.get(dateKey);
-              const plannedRun = showRunning && plan && plan.kind !== "strength";
+              const plannedRun = showRunning && plan && plan.kind !== "strength" && plan.kind !== "rest";
               const plannedStrength = showStrength && plan?.kind === "strength";
               const planLabel = plannedRun
                 ? `План: ${plan.distance_km ? `${distance.format(plan.distance_km)} км` : plan.kind === "race" ? "забег" : "бег"}`

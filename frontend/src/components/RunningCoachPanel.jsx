@@ -5,10 +5,11 @@ import { localDateKey } from "../lib/wellnessDates";
 import { requestWeek } from "./PlannedSessionEditor";
 import CoachDisclosure from "./CoachDisclosure";
 import CoachSessionProposal from "./CoachSessionProposal";
+import { CoachMemoryProposal } from "./CoachMemory";
 import TrainingWeekPanel from "./TrainingWeekPanel";
 import useRunningCoach from "../hooks/useRunningCoach";
 
-function Consultation({ active, focusDay, label, period, periodStart, periodEnd, syncedAt, onTrainingWeekChanged, review, viewScope }) {
+function Consultation({ active, focusDay, label, period, periodStart, periodEnd, syncedAt, calendarPlanVersion, onTrainingWeekChanged, review, viewScope }) {
   const [question, setQuestion] = useState("");
   const [completedReview, setCompletedReview] = useState(null);
   const sentReview = useRef(null);
@@ -18,6 +19,8 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
   const reviewActivity = review !== completedReview ? review?.activity : null;
   const [trainingWeekId, setTrainingWeekId] = useState(null);
   const [sessionProposal, setSessionProposal] = useState(null);
+  const [memoryProposal, setMemoryProposal] = useState(null);
+  const [memorySaved, setMemorySaved] = useState(false);
   const [weekProposal, setWeekProposal] = useState(null);
   const [savingWeek, setSavingWeek] = useState(false);
   const [weekError, setWeekError] = useState("");
@@ -47,12 +50,14 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
   function submit(event) {
     event.preventDefault();
     if (!question.trim() || busy) return;
+    setMemorySaved(false);
     void coach.ask(question).then((result) => {
       if (result?.training_week_proposal) {
         setWeekProposal(result.training_week_proposal);
         setWeekError("");
       }
       if (result?.training_session) setSessionProposal(result.training_session);
+      if (result?.memory_proposal) setMemoryProposal(result.memory_proposal);
       if (result?.training_move) setMoveProposal(result.training_move);
     });
     setQuestion("");
@@ -93,7 +98,7 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
         </button>
       </CoachDisclosure>
       <CoachDisclosure storageKey={`coach-section:${viewScope}:week`} title="План тренировок">
-        <TrainingWeekPanel key={weekRefresh} active={active} today={focusDay} syncedAt={syncedAt}
+        <TrainingWeekPanel key={weekRefresh} active={active} today={focusDay} syncedAt={syncedAt} calendarPlanVersion={calendarPlanVersion}
         disabled={busy} onPlanVersion={setTrainingWeekId} onPlanChanged={onTrainingWeekChanged}
         moveProposal={moveProposal} onDismissMove={() => setMoveProposal(null)} />
       </CoachDisclosure>
@@ -115,6 +120,9 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
           setWeekRefresh((value) => value + 1);
           setSessionProposal(null);
         }} />}
+      {memoryProposal && <CoachMemoryProposal key={memoryProposal.note} proposal={memoryProposal}
+        onClose={(saved) => { setMemorySaved(saved); setMemoryProposal(null); }} />}
+      {memorySaved && <p role="status" className="text-xs text-emerald-300">Сохранено в памяти консультанта.</p>}
       <div ref={composer} className="grid gap-2">
         {reviewActivity && (
           <div className="flex items-center justify-between gap-2 rounded-lg border border-[#6f5540] bg-[#302820] px-3 py-2 text-xs text-[#f3bc7f]">
@@ -151,15 +159,15 @@ function Consultation({ active, focusDay, label, period, periodStart, periodEnd,
       {coach.messages.length > 0 && (
         <section ref={latestMessages} className="grid gap-2" aria-live="polite">
           <h3 className="text-sm font-semibold text-slate-300">Сегодня</h3>
-          <CoachMessages messages={coach.messages} />
+          <CoachMessages messages={coach.messages} onDeleted={coach.removeExchange} disabled={busy} />
         </section>
       )}
-      {coach.hasHistory && <CoachChatHistory day={localDateKey(focusDay)} active={active} />}
+      {coach.hasHistory && <CoachChatHistory day={localDateKey(focusDay)} active={active} disabled={busy} />}
     </div>
   );
 }
 
-export default function RunningCoachPanel({ period, periodStart, periodEnd, label, syncedAt, onTrainingWeekChanged,
+export default function RunningCoachPanel({ period, periodStart, periodEnd, label, syncedAt, calendarPlanVersion, onTrainingWeekChanged,
   activityReview, viewScope, modelLabel, onClose, showOpenButtons = true }) {
   const modal = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -222,7 +230,7 @@ export default function RunningCoachPanel({ period, periodStart, periodEnd, labe
             {opened && (
               <div className="pt-3">
                 <Consultation active={isOpen} review={activityReview} viewScope={viewScope} focusDay={focusDay} label={label}
-                  period={period} periodStart={periodStart} periodEnd={periodEnd} syncedAt={syncedAt}
+                  period={period} periodStart={periodStart} periodEnd={periodEnd} syncedAt={syncedAt} calendarPlanVersion={calendarPlanVersion}
                   onTrainingWeekChanged={onTrainingWeekChanged} />
               </div>
             )}

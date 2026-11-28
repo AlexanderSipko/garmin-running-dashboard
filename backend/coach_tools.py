@@ -1,6 +1,7 @@
 """Private, read-only Garmin tools exposed to the consultant over MCP."""
 
 import asyncio
+from coach_memory import memory_proposal
 from copy import deepcopy
 import json
 from datetime import date, timedelta
@@ -28,8 +29,21 @@ class GarminCoachTools:
     def __init__(self, store, read_detail, garmin_key, read_details):
         self.session_proposal = None
         self.week_proposal = None
+        self.memory_proposal = None
+        self.allow_memory = False
         self.review_only = False
         self.server = FastMCP("Garmin consultant tools")
+
+        @self.server.tool()
+        def propose_memory_note(category: Literal["preference", "rule", "mistake"], note: str) -> dict:
+            """Propose one durable note explicitly requested by the runner. For a mistake, include how to avoid it. The runner confirms saving."""
+            if self.review_only or not self.allow_memory:
+                return {"error": "Запись памяти доступна по явной просьбе в чате."}
+            proposal = memory_proposal(store, category, note)
+            if "error" in proposal:
+                return proposal
+            self.memory_proposal = proposal
+            return {"note": proposal["note"], "saved": False}
 
         @self.server.tool()
         def get_garmin_recovery(day: date) -> dict:
@@ -171,15 +185,15 @@ class GarminCoachTools:
 
         @self.server.tool()
         def propose_running_week(preferences: WeekPreferences) -> dict:
-            """Preview a seven-day plan from recent running load. Ask for schedule preferences if unknown."""
+            """Preview seven days from recent running load. An active plan can be extended immediately, starting after its last date."""
             today = date.today()
             active = store.get("training_week_active")
-            if active and active["sessions"][-1]["date"] >= today.isoformat():
-                return {"error": "Сначала заверши текущий план недели."}
+            last_day = date.fromisoformat(active["sessions"][-1]["date"]) if active else None
             try:
                 draft = build_week_draft(
                     store.get("activities", []), store.get("runner_plan") or {}, today, preferences,
                     store.get("deload_weeks", {}),
+                    earliest_start=last_day + timedelta(days=1) if last_day else None,
                 )
             except ValueError as error:
                 return {"error": str(error)}
@@ -253,6 +267,7 @@ class GarminCoachTools:
                     {"name": tool.name, "description": tool.description, "parameters": tool.inputSchema}
                     for tool in result.tools
                     if not self.review_only or tool.name in {"get_garmin_activity", "get_running_zone_times", "get_garmin_wellness"}
+                    if self.allow_memory or tool.name != "propose_memory_note"
                 ]
 
         return asyncio.run(list_tools())

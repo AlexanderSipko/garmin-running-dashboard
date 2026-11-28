@@ -1,32 +1,74 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 
 const formatDay = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
-export function CoachMessages({ messages }) {
+const formatTimestamp = new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" });
+const toolProtocol = /<[^<>\r\n]{0,100}(?:tool_calls?|invoke\b|parameter\b)/i;
+
+export function CoachMessages({ messages, onDeleted, disabled = false }) {
+  const [deleting, setDeleting] = useState(null);
+  const [error, setError] = useState("");
   const exchanges = [];
   for (const message of messages) {
     if (message.role === "user" || !exchanges.length) exchanges.push([]);
     exchanges.at(-1).push(message);
   }
 
+  async function remove(id) {
+    setDeleting(id);
+    setError("");
+    try {
+      const response = await fetch(`/api/coach/chat/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error();
+      onDeleted(id);
+    } catch {
+      setError("Не удалось удалить переписку.");
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   return (
     <div className="grid gap-3">
       {exchanges.reverse().map((exchange, index) => (
-        <div className="grid gap-1" key={exchanges.length - index}>
+        <div className="grid gap-1" key={exchange[0].exchange_id ?? exchanges.length - index}>
           {exchange.map((message, position) => (
             <div key={position} className={`rounded-xl p-3 text-sm leading-relaxed ${message.role === "user" ? "bg-[#382e24]" : "bg-[#172229]"}`}>
-              <b className="text-xs text-[#f3bc7f]">{message.role === "user" ? "Ты" : "Консультант"}</b>
-              <p className="mt-1 whitespace-pre-wrap break-words">{message.role === "assistant" && message.content?.trim() === "<" ? "Ответ оборвался." : message.content}</p>
+              <div className="flex items-center gap-x-2">
+                <b className="shrink-0 text-xs text-[#f3bc7f]">{message.role === "user" ? "Ты" : "Консультант"}</b>
+                <span className="min-w-0 break-words text-[11px] text-slate-400">
+                  {message.created_at ? formatTimestamp.format(new Date(message.created_at))
+                    : (message.sent_day || message.focus_date) && formatDay.format(new Date(message.sent_day || message.focus_date))}
+                </span>
+                {message.role === "assistant" && (
+                  <span className="min-w-0 break-words text-[11px] text-slate-300">
+                    {message.model === "training-week" || message.model === "coach-memory" ? "Ответ приложения"
+                      : message.model ? `Модель: ${message.model}` : "Модель не записана"}
+                  </span>
+                )}
+                {position === 0 && message.exchange_id && onDeleted && (
+                  <button type="button" onClick={() => remove(message.exchange_id)} disabled={disabled || deleting !== null}
+                    aria-label="Удалить вопрос и ответ" title="Удалить вопрос и ответ"
+                    className="ml-auto grid size-7 shrink-0 place-items-center rounded-md text-slate-400 hover:bg-white/10 disabled:opacity-50">
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap break-words">{
+                message.role === "assistant" && (message.content?.trim() === "<" || toolProtocol.test(message.content))
+                  ? "Ответ оборвался." : message.content
+              }</p>
             </div>
           ))}
         </div>
       ))}
+      {error && <p role="alert" className="text-xs text-rose-300">{error}</p>}
     </div>
   );
 }
 
-function OlderMessages({ day, active }) {
+function OlderMessages({ day, active, disabled }) {
   const [days, setDays] = useState([]);
   const [next, setNext] = useState(day);
   const [request, setRequest] = useState(day);
@@ -72,7 +114,10 @@ function OlderMessages({ day, active }) {
           <h4 className="text-sm font-semibold text-slate-300">
             {group.day ? formatDay.format(new Date(group.day)) : "Сообщения без даты"}
           </h4>
-          <CoachMessages messages={group.messages} />
+          <CoachMessages messages={group.messages} disabled={disabled}
+            onDeleted={(id) => setDays((current) => current.map((entry) => ({
+              ...entry, messages: entry.messages.filter((message) => message.exchange_id !== id),
+            })).filter((entry) => entry.messages.length))} />
         </section>
       ))}
       {request && <p role="status" className="text-sm text-slate-400">Загружаю историю…</p>}
@@ -88,7 +133,7 @@ function OlderMessages({ day, active }) {
   );
 }
 
-export default function CoachChatHistory({ day, active }) {
+export default function CoachChatHistory({ day, active, disabled }) {
   const [open, setOpen] = useState(false);
   const [opened, setOpened] = useState(false);
 
@@ -101,7 +146,7 @@ export default function CoachChatHistory({ day, active }) {
       </button>
       {opened && (
         <div hidden={!open}>
-          <OlderMessages key={day} day={day} active={active && open} />
+          <OlderMessages key={day} day={day} active={active && open} disabled={disabled} />
         </div>
       )}
     </section>

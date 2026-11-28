@@ -195,7 +195,7 @@ def build_dashboard(days: int, store: dict[str, Any], *, configured: bool) -> di
             "current_plan": plan is active_week,
         }
         for plan in confirmed_weeks if plan
-        for session in plan["sessions"] if session["kind"] != "rest"
+        for session in plan["sessions"] if session["kind"] != "rest" or plan is active_week
     ]
     planned_sessions.extend(store.get("calendar_training_sessions", {}).values())
     return {

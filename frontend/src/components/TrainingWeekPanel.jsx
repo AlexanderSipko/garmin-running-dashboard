@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CalendarDays, CalendarSync, LoaderCircle, Pencil } from "lucide-react";
+import { CalendarDays, CalendarSync, LoaderCircle, Moon, Pencil, X } from "lucide-react";
 import { localDateKey } from "../lib/wellnessDates";
 import PlannedSessionEditor, { isPlannedRun, requestWeek, sessionLabels as kinds } from "./PlannedSessionEditor";
 
@@ -137,7 +137,7 @@ function WeekMoveForm({ plan, proposal, disabled, onMove, onCancel }) {
 }
 
 export default function TrainingWeekPanel({
-  active, today, syncedAt, disabled, onPlanVersion, onPlanChanged, moveProposal, onDismissMove,
+  active, today, syncedAt, calendarPlanVersion, disabled, onPlanVersion, onPlanChanged, moveProposal, onDismissMove,
 }) {
   const day = localDateKey(today);
   const [state, setState] = useState(null);
@@ -170,7 +170,7 @@ export default function TrainingWeekPanel({
       .catch((failure) => { if (!controller.signal.aborted) setError(failure.message); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [active, day, syncedAt]);
+  }, [active, day, syncedAt, calendarPlanVersion]);
 
   async function changePlan(mode) {
     setAction(mode);
@@ -226,6 +226,7 @@ export default function TrainingWeekPanel({
 
   const plan = state?.draft || state?.active;
   const draft = Boolean(state?.draft);
+  const visibleSessions = plan?.sessions ?? [];
   const busy = disabled || loading || Boolean(action);
   const showMove = moving || Boolean(moveProposal);
   const planDates = plan && dateRangeFormat.formatRange(
@@ -269,10 +270,17 @@ export default function TrainingWeekPanel({
         {!draft && state?.synced_at && (
           <p className="text-xs text-slate-400">Последняя синхронизация Garmin: {new Date(state.synced_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
         )}
+      </>}
+
+      {visibleSessions.length > 0 && (
         <ol className="divide-y divide-white/10 rounded-lg border border-white/10">
-          {plan.sessions.map((session) => {
-            const editable = !draft && isPlannedRun(session)
+          {visibleSessions.map((session, index) => {
+            const canRest = !draft && session.kind !== "rest"
               && (session.status === "upcoming" || session.status === "today");
+            const canTrim = !draft && visibleSessions.slice(index).every((row) => (
+              row.kind === "rest" && (row.status === "upcoming" || row.status === "today")
+            ));
+            const editable = canRest && isPlannedRun(session);
             const editing = editable && !showMove && editingDate === session.date;
             const distanceLabel = session.distance_km == null ? "" : `${distanceFormat.format(session.distance_km)} км`;
             return (
@@ -295,20 +303,39 @@ export default function TrainingWeekPanel({
                       <Pencil size={13} aria-hidden="true" />
                     </button>
                   )}
+                  {canRest && (
+                    <button type="button" disabled={busy} title="Сделать днём отдыха"
+                      aria-label={`Сделать днём отдыха, ${formatDay(session.date)}`}
+                      onClick={() => saveSessionEdit("/rest", "PATCH",
+                        { session_date: session.date }, "Поставлен отдых.")}
+                      className="grid size-7 place-items-center rounded-md hover:bg-white/10 focus-visible:outline-2 disabled:opacity-50">
+                      <Moon size={13} aria-hidden="true" />
+                    </button>
+                  )}
+                  {canTrim && (
+                    <button type="button" disabled={busy} title="Удалить этот и последующие дни отдыха"
+                      aria-label={`Удалить дни отдыха начиная с ${formatDay(session.date)}`}
+                      onClick={() => saveSessionEdit("/rest-tail", "PATCH",
+                        { session_date: session.date }, "Дни отдыха удалены.")}
+                      className="grid size-7 place-items-center rounded-md hover:bg-white/10 focus-visible:outline-2 disabled:opacity-50">
+                      <X size={13} aria-hidden="true" />
+                    </button>
+                  )}
                 </span>
                 <span className="min-w-0 whitespace-pre-wrap break-words text-slate-300">{session.kind !== "rest" && session.instruction}</span>
                 {!draft && <span className={`text-right text-[11px] ${session.distance_status === "on_target" ? "text-emerald-300" : "text-slate-400"}`}>
                   {distanceStatus[session.distance_status] || statuses[session.status]}
                 </span>}
                 {editing && (
-                  <PlannedSessionEditor session={session} disabled={busy} onCancel={() => setEditingDate(null)}
+                  <PlannedSessionEditor session={session}
+                    disabled={busy} onCancel={() => setEditingDate(null)}
                     onSave={(fields) => saveSessionEdit("/distance", "PATCH", fields, "Тренировка обновлена.")} />
                 )}
               </li>
             );
           })}
         </ol>
-      </>}
+      )}
 
       {!draft && activePlan && !activePlan.expired && (
         showMove ? (
@@ -342,8 +369,8 @@ export default function TrainingWeekPanel({
       )}
       <div className="flex flex-wrap gap-2">
         {draft ? <>
-          <button type="button" className={`${button} bg-[#3a3025] text-[#f3bc7f]`} disabled={busy || (activePlan && !activePlan.expired)} onClick={() => changePlan("approve")}>
-            {activePlan && !activePlan.expired ? "Подтверждение доступно завтра" : "Подтвердить план"}
+          <button type="button" className={`${button} bg-[#3a3025] text-[#f3bc7f]`} disabled={busy} onClick={() => changePlan("approve")}>
+            {activePlan && !activePlan.expired ? "Добавить в план" : "Подтвердить план"}
           </button>
           <button type="button" className={button} disabled={busy} onClick={() => changePlan("discard")}>Отклонить</button>
         </> : (!plan || state?.recap) && (

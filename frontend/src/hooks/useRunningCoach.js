@@ -114,15 +114,13 @@ function useRunningCoach({
         question: cleanQuestion,
         activity_id: activityId ?? null,
         save_activity_analysis: saveActivityAnalysis,
-        summary: summary ? summary.slice(0, 1200) : null,
       });
       setChat((current) => {
         if (current && current.day > focusDate) return current;
         const previous = current?.day === focusDate ? current : { day: focusDate, messages: [], hasHistory: true };
         return {
           ...previous,
-          messages: [...previous.messages, userMessage,
-            { role: "assistant", content: result.answer, usage: result.usage }],
+          messages: [...previous.messages, ...result.messages],
         };
       });
       return result;
@@ -152,6 +150,9 @@ function useRunningCoach({
     error: error || summaryError,
     usage,
     ask,
+    removeExchange: (id) => setChat((current) => current && ({
+      ...current, messages: current.messages.filter((message) => message.exchange_id !== id),
+    })),
     refreshSummary: refresh,
   };
 }

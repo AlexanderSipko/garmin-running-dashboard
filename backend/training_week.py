@@ -208,6 +208,36 @@ def move_week_session(plan: dict, activities: list[dict], today: date, from_day:
     }
 
 
+def trim_week_rest_tail(plan: dict, activities: list[dict], today: date, day: date) -> dict | None:
+    key = day.isoformat()
+    sessions = plan["sessions"]
+    index = next((i for i, row in enumerate(sessions) if row["date"] == key), None)
+    if day < today or index is None or any(row["kind"] != "rest" for row in sessions[index:]):
+        raise ValueError("Можно удалить только завершающие дни отдыха.")
+    tail_dates = {date.fromisoformat(row["date"]) for row in sessions[index:]}
+    if any(parse_date(row.get("start_time")) in tail_dates for row in activities):
+        raise ValueError("В этих днях уже есть запись Garmin.")
+    if index == 0:
+        return None
+    return {**plan, "sessions": sessions[:index], "revision": plan.get("revision", 0) + 1}
+
+
+def mark_week_session_rest(plan: dict, activities: list[dict], today: date, day: date) -> dict:
+    key = day.isoformat()
+    if day < today or any(parse_date(row.get("start_time")) == day for row in activities):
+        raise ValueError("Отдых можно поставить на предстоящий день без записи Garmin.")
+    session = next((row for row in plan["sessions"] if row["date"] == key), None)
+    if session is None:
+        raise ValueError("Выбери день из подтверждённого плана.")
+    if session["kind"] == "rest":
+        return plan
+    return {
+        **plan,
+        "sessions": [{"date": key, "kind": "rest"} if row is session else row for row in plan["sessions"]],
+        "revision": plan.get("revision", 0) + 1,
+    }
+
+
 def change_week_distance(
     plan: dict, activities: list[dict], today: date, day: date, distance_km: float,
     *, kind: str | None = None, instruction: str | None = None, adding: bool = False,
@@ -271,7 +301,7 @@ def save_calendar_session(
     }
     updated = change_week_distance(
         {"sessions": [entry], "revision": revision or 0}, store.get("activities", []),
-        today, day, distance_km, kind=kind, instruction=instruction, adding=existing is None,
+        today, day, distance_km, kind=kind, instruction=instruction, adding=entry["kind"] == "rest",
     )
     sessions[key] = {**updated["sessions"][0], "revision": updated["revision"], "standalone": True}
     store["calendar_plan_revision"] = store.get("calendar_plan_revision", 0) + 1
